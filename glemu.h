@@ -463,6 +463,10 @@ namespace OpenGLEmu
     extern uint32_t current_buffer_index;
 	extern uint32_t current_count;
     extern uint32_t buffer_count;
+
+    //NOTE(RAY):Temporary way to change the default buffer size of bound buffer
+    //TODO(Ray):Probably just make this a parameter for CreateBufferAtBinding API. Still on the fence.
+    extern memory_index default_buffer_size;
     
     void Init();
     //CPU BUFFER

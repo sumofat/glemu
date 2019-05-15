@@ -3,8 +3,6 @@
 
 namespace OpenGLEmu
 {
-    //YoyoVector glemu_buffer;
-//    MemoryArena glemu_commands;
     GLEMURenderCommandList command_list;
 //Samplers
     SamplerDescriptor defaults;
@@ -348,7 +346,8 @@ namespace OpenGLEmu
         else if(!AnythingCacheCode::DoesThingExist(&resource_managment_tables.released_textures_table,&ttk))
         {
             result = true;
-        }
+        }
+
 
 
 #else
@@ -2034,12 +2033,7 @@ namespace OpenGLEmu
                             RenderCommandEncoder re = in_params.re;
 
                             uint32_t bi = current_buffer_index;
-
-//        command.atlas_index_buffer = sbcommand_params->atlas_index_buffer[bi];
-//        command.matrix_buffer = sbcommand_params->matrix_buffer;
-
-                            OpenGLEmu::current_buffer_index = (OpenGLEmu::current_buffer_index + 1) % OpenGLEmu::buffer_count;
-
+ 
                             uint32_t current_count = command->current_count;
                             if(current_count > 0)
                             {
@@ -2047,11 +2041,9 @@ namespace OpenGLEmu
                                 RenderEncoderCode::DrawPrimitives(&re, command->topology, 0, (current_count));
                             }
                         }
-                        
                     }
                     
                 }//end switch
-               
             }
 
             RenderEncoderCode::AddCompletedHandler(c_buffer,[](void* arg)
@@ -2065,18 +2057,7 @@ namespace OpenGLEmu
                 RenderEncoderCode::EndEncoding(&in_params.re);            
             }
             
-            //  SpriteBatchRenderer* pRenderer = SpriteBatchRenderer::GetInstance()
-            //TODO(Ray):Cocos skips the scene which causes flicker we keep rendering the same thing
-            //until cocos draws than reset.  WE WILL FIX THIS by
-            //A. making everything better drawing faster more effeciently
-            //B. coming back here and figuring out a better solution its kind of cheezy
-                
-            //Execute the render pass. (Which sSpriteExample::sb_pass_buffereues commands on the gpu)
-            //if(YoyoSpriteBatchRenderer::sb_pass_buffer.ExecutePasses)
-            //  YoyoSpriteBatchRenderer::sb_pass_buffer.ExecutePasses(&YoyoSpriteBatchRenderer::sb_pass_buffer,c_buffer,0);
-                
             //Tell the gpu to present the drawable that we wrote to
-            //Drawable current_drawable = RenderEncoderCode::GetDefaultDrawableFromView();
             RenderEncoderCode::PresentDrawable(c_buffer,current_drawable.state);
             RenderEncoderCode::Commit(c_buffer);
             command_list.count = 0;
