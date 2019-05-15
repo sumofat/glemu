@@ -77,6 +77,14 @@ namespace OpenGLEmu
     //matrix buffer add on for those who might need it.
     GPUBuffer matrix_buffer;//uniform
     MemoryArena matrix_buffer_arena;
+
+    //
+    bool debug_out_high = false;
+    bool debug_out_uniforms = false;
+    bool debug_out_signpost = true;
+    RenderPipelineState prev_frame_pipeline_state;
+    RenderPipelineState default_pipeline_state;
+    Texture default_depth_stencil_texture;
     
     VertexDescriptor CreateDefaultVertexDescriptor()
     {
@@ -940,7 +948,7 @@ namespace OpenGLEmu
         tex_entry.texture_ptr = tex_binds.ptr;
         uint32_t index = YoyoStretchPushBack(&draw_tables.texture_binding_table,tex_entry);
         
-        ///pr_sb_buffer.draw_index++;
+        draw_index++;
         //pr_sb_buffer.uniform_table_index = 0;
         Assert(index == vf_index);
         return index;
@@ -994,7 +1002,7 @@ namespace OpenGLEmu
 //        pr_sb_buffer.sb.from_to = float2(0.0f);
 //        pr_sb_buffer.sb.from_to_bytes = float2(0.0f);
 //        pr_sb_buffer.sb.from_to_matrix_index_bytes = float2(0.0f);
-//        pr_sb_buffer.draw_index = 0;
+        draw_index = 0;
 //        pr_sb_buffer.buffer_range = float2(0.0f);
 //        pr_sb_buffer.texture_buffer_range = float2(0.0f);
         
@@ -2050,7 +2058,7 @@ namespace OpenGLEmu
                                                   {
                                                      DispatchSemaphoreT* sema = (DispatchSemaphoreT*)arg;
                                                      RenderSynchronization::DispatchSemaphoreSignal(sema);
-                                                  },&pr_sb_buffer.sb.semaphore);
+                                                  },&semaphore);
          
             if(init_params)
             {
@@ -2070,7 +2078,7 @@ namespace OpenGLEmu
         uint32_t depth_stencil_state_count = RenderCache::GetPipelineStateCount();
         PlatformOutput(true, "DepthStencilState count: %d\n",depth_stencil_state_count);
         PlatformOutput(true, "RenderEncoder count: %d\n",render_encoder_count);
-        PlatformOutput(true, "Draw count: %d\n",pr_sb_buffer.draw_index);
+        PlatformOutput(true, "Draw count: %d\n",draw_index);
 //        CaptureManager cm = RenderDebug::GetSharedCaptureManager();
 //        RenderDebug::StopCapture(cm);
     }
