@@ -26,10 +26,10 @@ namespace OpenGLEmu
     //NOTE(Ray):intention was variable sized buffers for uniforms but decided on not using
     //Moving to fixed size vectors for each shader set since there should be only one set of uniforms
     //per shader. simpler easier but will keep cpubuffers around for variable size implementation
-    //lat which we will sure use later for something else.
+    //later which we will sure use later for something else.
     AnythingCache cpubuffercache;
     AnythingCache programcache;
-    AnythingCache uniform_buffercache;//cache of vectors each one attached to a shader
+//    AnythingCache uniform_buffercache;//cache of vectors each one attached to a shader
     AnythingCache depth_stencil_state_cache;//We cache the depthstates here so we dont create any more than neccessarry.
     //the amount of these will probably be limited so once created we will probably wont need to free as far as I can tell.
     AnythingCache gl_texturecache;//In order to properly handle deleted textures across multiple objects we offer a way to query for and tracking of ..
@@ -78,7 +78,6 @@ namespace OpenGLEmu
     GPUBuffer matrix_buffer;//uniform
     MemoryArena matrix_buffer_arena;
 
-    //
     bool debug_out_high = false;
     bool debug_out_uniforms = false;
     bool debug_out_signpost = true;
@@ -379,37 +378,25 @@ namespace OpenGLEmu
             ReleasedTextureEntry* rte = YoyoGetVectorElement(ReleasedTextureEntry,&resource_managment_tables.released_textures_table.anythings,i);
             if(rte)
             {
-                if(rte->tex_key.gl_tex_id == 15)
-                {
-                    int a = 0;
-                }
-                //(ReleasedTextureEntry*)resource_managment_tables.released_textures_table.anythings.base + i;
                 //NOTE(Ray):Could probably put this in a hash but the assumption is that you wont do this often and surely not on purpose. ;)
                 //We could also have a define where you could assert here. or when you try to use a texture that is already deleted.
-                //NOTE(Ray):Now we are trying to just delete all textures at the endo fthe frame or a lil after because I think tha twill be enough
-                //for VGR
                 ++rte->current_count;
                 if(rte->current_count >= rte->delete_count  && rte->is_free == false)
                 {
                     if(AnythingCacheCode::DoesThingExist(&gl_texturecache,&rte->tex_key))
                     {
                         GLTexture* tex = GetThingPtr(&gl_texturecache,&rte->tex_key,GLTexture);
-                           if(tex->id != rte->tex_key.gl_tex_id)
-                           {
-                               int a  = 0;
-                               tex = GetThingPtr(&gl_texturecache,&rte->tex_key,GLTexture);
-                           }
                         Assert(tex->id == rte->tex_key.gl_tex_id);
                         Assert(tex->texture.state);
                         Assert(tex->texture.is_released);
-                        {
-                            RendererCode::ReleaseTexture(&tex->texture);
-                        }
+                        RendererCode::ReleaseTexture(&tex->texture);
                     }
+#if GLEMU_DEBUG
                     else
                     {
                         Assert(false);
                     }
+#endif
                     YoyoStretchPushBack(&temp_deleted_tex_entries,rte->tex_key);
                     rte->tex_key = {};
                     rte->thread_id = 0;
@@ -422,10 +409,6 @@ namespace OpenGLEmu
         for(int i = 0;i < temp_deleted_tex_entries.count;++i)
         {
             GLTextureKey* tkey = (GLTextureKey*)temp_deleted_tex_entries.base + i;
-            if(tkey->gl_tex_id == 2 || tkey->gl_tex_id == 119)
-            {
-                int a = 0;
-            }
             AnythingCacheCode::RemoveThingFL(&resource_managment_tables.released_textures_table,tkey);
             AnythingCacheCode::RemoveThingFL(&gl_texturecache,tkey);
         }
@@ -586,15 +569,6 @@ namespace OpenGLEmu
         entry.tex_index = tex_index;
         entry.sampler_index = sampler_index;
         entry.texture = texture;
-
-/*
-  if(texture.is_released)
-  {
-  UsedButReleasedEntry e = {};
-  e.texture_key = texture.key;
-  YoyoPushBack(&resource_managment_tables.used_but_released_table,e);
-  }
-*/
         
         YoyoStretchPushBack(&currently_bound_frag_textures,entry);
         float2 start_count = range_of_current_bound_frag_textures;
@@ -608,9 +582,7 @@ namespace OpenGLEmu
         Assert(texture.texture.state);
         Assert(texture.sampler.state);
         if(GLIsValidTexture(texture))        
-//        if(AnythingCacheCode::DoesThingExistByKey(&gl_texturecache,texture.key))
         {
-
         }
         else
         {
@@ -621,11 +593,6 @@ namespace OpenGLEmu
         entry.tex_index = index;
         entry.sampler_index = index;
         entry.texture = texture;
-
-        /*
-          GLTexture* texptr = GetThingByKeyPtr(&gl_texturecache,texture.key,GLTexture);
-          UseTexture(texptr);
-        */
             
         YoyoStretchPushBack(&currently_bound_frag_textures,entry);
         float2 start_count = range_of_current_bound_frag_textures;
@@ -811,6 +778,7 @@ namespace OpenGLEmu
     {
         return current_reference_value;
     }
+    
     UniformBindResult AddUniData(uint32_t buffer_binding,uint32_t data_index,GLProgram* p,uint32_t size)
     {
         BufferOffsetResult last = OpenGLEmu::GetUniformAtBinding(buffer_binding,data_index);
@@ -855,39 +823,12 @@ namespace OpenGLEmu
         k.allowGPUOptimizedContents = texture.texture.descriptor.allowGPUOptimizedContents;
         k.gl_tex_id = texture.id;
 
-#if 0
-        if(AnythingCacheCode::DoesThingExist(&gl_texturecache,&k))
-        {
-            AnythingCacheCode::DoesThingExist(&gl_texturecache,&k);
-            GLTexture* t = GetThingPtr(&gl_texturecache,&k,GLTexture);
-            AnythingCacheCode::AddThingFL(&gl_texturecache,&k,&texture);
-            Assert(false);
-        }
-#endif
-
         texture.texture.is_released = false;
-        if(texture.id == 25 || texture.id == 15 || texture.id == 4)
-        {
-            int a = 0;
-        }
-        if(texture.id == 2 || texture.id == 119)
-        {
-            int a = 0;
-        }
+
         if(!AnythingCacheCode::AddThingFL(&gl_texturecache,&k,&texture))
         {
             PlatformOutput(true,"Texture already Exist was not added to texture cache");
         }
-
-#if 0
-        GLTexture* t = GetThingPtr(&gl_texturecache,&k,GLTexture);
-//        if(t->texture.state != k.api_internal_ptr)
-        {
-            int a = 0;
-        }
-        t = GetThingPtr(&gl_texturecache,&k,GLTexture);
-        Assert(t->texture.id == k.gl_tex_id);
-#endif
 
         EndTicketMutex(&texture_mutex);
         return texture;
@@ -902,6 +843,7 @@ namespace OpenGLEmu
         sd.mag_filter = SamplerMinMagFilterLinear;
         return TexImage2D(texels,dim,format,sd,usage);
     }
+
     //TODO(Ray):Ensure we never try to add a uniform state that is larget than 2kb
     //NOTE(Ray):Unlike gl We provide the last known state of the uniform data to the user so they can manipulate
     //it how they see fit at each state more explicitely.
