@@ -171,10 +171,8 @@ namespace OpenGLEmu
         sprite_rp_ca_desc.description.storeAction = StoreActionStore;
         RenderEncoderCode::AddRenderPassColorAttachment(&sp_rp_desc,&sprite_rp_ca_desc);
         RenderEncoderCode::SetRenderPassColorAttachmentDescriptor(&sp_rp_desc,0);
-        
-//        RenderPass* sb_subpass = RenderPassCode::AddRenderPass(&sb_pass_buffer, no_of_sprite_pass, sizeofc,0,&sp_rp_desc);
+
         default_render_pass_descriptor = sp_rp_desc;
-            
 
         RenderMaterial material = SpriteBatchCode::CreateSpriteBatchMaterials("spritebatch_vs_matrix_indexed","spritebatch_fs_single_sampler","Test matrix buffer");
 
@@ -201,8 +199,6 @@ namespace OpenGLEmu
             Assert(matrix_buffer.buffer);
             matrix_buffer_arena = AllocatePartition(size,matrix_buffer.data);
         }
-        
-        // YoyoSpriteBatchRenderer::InitSize(&pr_sb_buffer, RendererCode::dim, 1024 * SIZE_OF_SPRITE_IN_BYTES, LoadActionLoad,false,true,false,true);
 //////       // prev_frame_pipeline_state = pr_sb_buffer.sb.material.pipeline_state;
 //////       // default_pipeline_state = pr_sb_buffer.sb.material.pipeline_state;
     }
@@ -288,9 +284,9 @@ namespace OpenGLEmu
         ttk.storage_mode = texture->texture.descriptor.storageMode;
         ttk.allowGPUOptimizedContents = texture->texture.descriptor.allowGPUOptimizedContents;
         ttk.gl_tex_id = texture->id;
-//Should we allow textures that are not in the cache to be deleted and
-        //TODO(Ray):Found out why some textures are no in the cache.
+
 //If we are not in the texturecache cant delete it since its not a texture we know about.
+        //And is not already been added to the released textures table.
         if(AnythingCacheCode::DoesThingExist(&gl_texturecache,&ttk))
         {
             if(!AnythingCacheCode::DoesThingExist(&resource_managment_tables.released_textures_table,&ttk))
@@ -324,7 +320,9 @@ namespace OpenGLEmu
     }
     
     //NOTE(Ray)IMPORTANT:This must be used in a thread safe only section of code
-    static uint64_t GLEMuGetNextTextureID()
+    //Actually this should only be used in one place that I can think of.  Kind of a dumb
+    //function tbh
+    static inline uint64_t GLEMuGetNextTextureID()
     {
         return ++glemu_tex_id;
     }
@@ -345,7 +343,7 @@ namespace OpenGLEmu
         ttk.storage_mode = texture.texture.descriptor.storageMode;
         ttk.allowGPUOptimizedContents = texture.texture.descriptor.allowGPUOptimizedContents;
         ttk.gl_tex_id = texture.id;
-#if 1
+
         if(!AnythingCacheCode::DoesThingExist(&gl_texturecache,&ttk))
         {
             result = false;
@@ -355,14 +353,6 @@ namespace OpenGLEmu
             result = true;
         }
 
-
-
-#else
-        if(!AnythingCacheCode::DoesThingExist(&resource_managment_tables.released_textures_table,&ttk))
-        {
-            result = true;
-        }
-#endif
         return result;        
     }
 
@@ -814,7 +804,6 @@ namespace OpenGLEmu
         texture.id = GLEMuGetNextTextureID();
         
         GLTextureKey k = {};
-//        k.api_internal_ptr = texture.texture.state;
         k.format = texture.texture.descriptor.pixelFormat;
         k.width = texture.texture.descriptor.width;
         k.height = texture.texture.descriptor.height;
@@ -918,7 +907,6 @@ namespace OpenGLEmu
     }
 
 //Commands    
-    
     static inline void AddHeader(GLEMUBufferState type)
     {
         GLEMUCommandHeader* header = PushStruct(&command_list.buffer,GLEMUCommandHeader);
@@ -1992,7 +1980,6 @@ namespace OpenGLEmu
                             }
                         }
                     }
-                    
                 }//end switch
             }
 
