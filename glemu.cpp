@@ -1035,6 +1035,10 @@ namespace OpenGLEmu
         GLEMUViewportChangeCommand* command = AddCommand(GLEMUViewportChangeCommand);
         command->viewport = float4(x,y,width,height);
     }
+    void Viewport(float4 vp)
+    {
+        Viewport(vp.x(),vp.y(),vp.z(),vp.w());
+    }
 
     void BindFrameBufferStart(GLTexture texture)
     {
