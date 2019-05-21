@@ -62,7 +62,6 @@ namespace OpenGLEmu
     uint32_t buffer_size;
 
     DispatchSemaphoreT semaphore;
-    uint32_t current_count;
         
     GPUBuffer buffer[3];
     MemoryArena arena[3];
@@ -212,6 +211,8 @@ namespace OpenGLEmu
         buffer_count = 3;
         buffer_size = 1024 * SIZE_OF_SPRITE_IN_BYTES;
         temp_deleted_tex_entries = YoyoInitVector(1,GLTextureKey,false);
+
+        semaphore = RenderSynchronization::DispatchSemaphoreCreate(buffer_count);
         
         AnythingRenderSamplerStateCache::Init(4096);
         AnythingCacheCode::Init(&buffercache,4096,sizeof(TripleGPUBuffer),sizeof(uint64_t));
@@ -887,19 +888,6 @@ namespace OpenGLEmu
     
     void EndDraw(uint32_t unit_size)
     {
-//        pr_sb_buffer.last_unit_size = unit_size;
-//        pr_sb_buffer.sb.texture.state = nullptr;
-//        pr_sb_buffer.sb.gl_texture.texture.state = nullptr;
-//        pr_sb_buffer.sb.gl_texture.sampler.state = nullptr;
-//        pr_sb_buffer.sb.current_count = 0;
-        current_count = 0;
-//        pr_sb_buffer.sb.is_primitive_triangles = false;
-        
-//        pr_sb_buffer.buffer_range = float2(0.0f);
-//        pr_sb_buffer.texture_buffer_range = float2(0.0f);
-
-//        pr_sb_buffer.framebuffer_state = framebuffer_none;
-
         range_of_current_bound_buffers = float2(range_of_current_bound_buffers.y());
         range_of_current_bound_frag_textures = float2(range_of_current_bound_frag_textures.y());
 
@@ -923,19 +911,14 @@ namespace OpenGLEmu
     void PreFrameSetup()
     {
         command_list.buffer.used = 0;
-        //YoyoClearVector(&OpenGLEmu::glemu_buffer);
-        current_count = 0;
+        command_list.count = 0;
+
         uint32_t bi =  current_buffer_index;
         arena[bi].used = 0;
         atlas_index_arena[bi].used = 0;
         matrix_buffer_arena.used = 0;
-//        pr_sb_buffer.sb.from_to = float2(0.0f);
-//        pr_sb_buffer.sb.from_to_bytes = float2(0.0f);
-//        pr_sb_buffer.sb.from_to_matrix_index_bytes = float2(0.0f);
         draw_index = 0;
-//        pr_sb_buffer.buffer_range = float2(0.0f);
-//        pr_sb_buffer.texture_buffer_range = float2(0.0f);
-        
+
         //reset all uniform buffers
         CPUBuffer* ub = OpenGLEmu::GetCPUBufferAtBinding(0);
         YoyoClearVector(&ub->ranges);
@@ -1007,7 +990,7 @@ namespace OpenGLEmu
  
     void DisableScissorTest()
     {
-        AddHeader(glemu_bufferstate_scissor_test_enable);
+        AddHeader(glemu_bufferstate_scissor_test_disable);
         GLEMUScissorTestCommand* command = AddCommand(GLEMUScissorTestCommand);
         command->is_enable = false;
     }
@@ -1016,7 +999,7 @@ namespace OpenGLEmu
     {
         AddHeader(glemu_bufferstate_scissor_rect_change);
         GLEMUScissorRectCommand* command = AddCommand(GLEMUScissorRectCommand);
-        ScissorRect s_rect;
+        ScissorRect s_rect = {};
         s_rect.x = x;
         s_rect.y = y;
         s_rect.width = width;
@@ -1318,9 +1301,8 @@ namespace OpenGLEmu
         GLEMUDrawArraysCommand* command = AddCommand(GLEMUDrawArraysCommand);                
         command->is_from_to = true;
         command->is_primitive_triangles = true;
-        command->current_count = current_count;
+
         command->topology = topology_triangle;
-//        pr_sb_buffer.sb.current_count = current_count;
 
         GLProgramKey key = {(uint64_t)current_program.shader.vs_object,(uint64_t)current_program.shader.ps_object};
         GLProgram p = OpenGLEmu::GetProgram(key);
@@ -1338,7 +1320,9 @@ namespace OpenGLEmu
 
         command->uniform_table_index = OpenGLEmu::AddDrawCallEntry(v_uni_bind_result,f_uni_bind_result,tex_binds);
         command->buffer_range = range_of_current_bound_buffers;
-        command->texture_buffer_range = range_of_current_bound_frag_textures;        
+        command->texture_buffer_range = range_of_current_bound_frag_textures;
+        command->current_count = current_count;
+        
         EndDraw(unit_size);
     }
      
@@ -1368,7 +1352,6 @@ namespace OpenGLEmu
 
         if(current_drawable.state)
         {
-            //SpriteBatchBuffer* sbb = nullptr;//&sb_buffer;
             //Set default in_params for passes
             MatrixPassInParams in_params = {};
             in_params.s_rect = default_s_rect;
@@ -1592,6 +1575,8 @@ namespace OpenGLEmu
                         else if(command_type == glemu_bufferstate_viewport_change)
                         {
                             GLEMUViewportChangeCommand* command = Pop(at,GLEMUViewportChangeCommand);
+                            PlatformOutput(true, "Viewport w: %d h: %d .\n",command->viewport.x(),command->viewport.y());
+                            
                             //TODO(Ray):We need to add some checks here to keep viewport in surface bounds.
                             in_params.viewport = command->viewport;
                             float4 vp = in_params.viewport;
@@ -1673,12 +1658,11 @@ namespace OpenGLEmu
                         {
                             GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
                             in_params.is_s_rect = false;
-                            ScissorRect new_s_rect;
+                            ScissorRect new_s_rect = {};
                             new_s_rect.width = current_render_texture.descriptor.width;
                             new_s_rect.height = current_render_texture.descriptor.height;
                             new_s_rect.x = 0;
                             new_s_rect.y = 0;
-                            //in_params.s_rect = new_s_rect;
                             RenderEncoderCode::SetScissorRect(&in_params.re, new_s_rect);
                             continue;
                         }
@@ -1977,7 +1961,7 @@ namespace OpenGLEmu
                             uint32_t bi = current_buffer_index;
  
                             uint32_t current_count = command->current_count;
-                            if(current_count > 0)
+//                            if(current_count > 0)
                             {
                                 GPUBuffer vertexbuffer = in_params.vertexbuffer->buffer[bi];
                                 RenderEncoderCode::DrawPrimitives(&re, command->topology, 0, (current_count));
@@ -1986,13 +1970,13 @@ namespace OpenGLEmu
                     }
                 }//end switch
             }
-
+            
             RenderEncoderCode::AddCompletedHandler(c_buffer,[](void* arg)
                                                   {
                                                      DispatchSemaphoreT* sema = (DispatchSemaphoreT*)arg;
                                                      RenderSynchronization::DispatchSemaphoreSignal(sema);
                                                   },&semaphore);
-         
+            
             if(init_params)
             {
                 RenderEncoderCode::EndEncoding(&in_params.re);            
@@ -2001,7 +1985,7 @@ namespace OpenGLEmu
             //Tell the gpu to present the drawable that we wrote to
             RenderEncoderCode::PresentDrawable(c_buffer,current_drawable.state);
             RenderEncoderCode::Commit(c_buffer);
-            command_list.count = 0;
+
             prev_frame_pipeline_state = in_params.pipeline_state;
         }
     

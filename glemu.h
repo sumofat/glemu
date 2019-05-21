@@ -322,7 +322,6 @@ namespace OpenGLEmu
 {
 //Variables that have been exposed or should possiblly exposed are here.
     extern uint32_t current_buffer_index;
-	extern uint32_t current_count;
     extern uint32_t buffer_count;
 
     //NOTE(RAY):Temporary way to change the default buffer size of bound buffer
