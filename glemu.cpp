@@ -29,7 +29,7 @@ namespace OpenGLEmu
     //later which we will sure use later for something else.
     AnythingCache cpubuffercache;
     AnythingCache programcache;
-//    AnythingCache uniform_buffercache;//cache of vectors each one attached to a shader
+
     AnythingCache depth_stencil_state_cache;//We cache the depthstates here so we dont create any more than neccessarry.
     //the amount of these will probably be limited so once created we will probably wont need to free as far as I can tell.
     AnythingCache gl_texturecache;//In order to properly handle deleted textures across multiple objects we offer a way to query for and tracking of ..
@@ -70,14 +70,15 @@ namespace OpenGLEmu
     MemoryArena atlas_index_arena[3];
 
     //??
-    GPUBuffer matrix_variable_size_buffer[3];
-    MemoryArena matrix_variable_size_arena[3];
+//    GPUBuffer matrix_variable_size_buffer[3];
+//    MemoryArena matrix_variable_size_arena[3];
 
     //matrix buffer add on for those who might need it.
     GPUBuffer matrix_buffer;//uniform
     MemoryArena matrix_buffer_arena;
 
     bool debug_out_high = false;
+    bool debug_out_general = false;
     bool debug_out_uniforms = false;
     bool debug_out_signpost = true;
     RenderPipelineState prev_frame_pipeline_state;
@@ -205,17 +206,13 @@ namespace OpenGLEmu
             atlas_index_buffer[i] = RenderGPUMemory::NewBufferWithLength(atlas_index_buffer_size,ResourceStorageModeShared);
             Assert(atlas_index_buffer[i].buffer);
             atlas_index_arena[i] = AllocatePartition(atlas_index_buffer_size,atlas_index_buffer[i].data);
-            matrix_variable_size_arena[i] = AllocatePartition(atlas_index_buffer_size,matrix_variable_size_buffer[i].data);
+//            matrix_variable_size_arena[i] = AllocatePartition(atlas_index_buffer_size,matrix_variable_size_buffer[i].data);
         }
 
-        {
-            uint32_t size = (uint32_t)buffer_size;
-            matrix_buffer = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
-            Assert(matrix_buffer.buffer);
-            matrix_buffer_arena = AllocatePartition(size,matrix_buffer.data);
-        }
-//////       // prev_frame_pipeline_state = pr_sb_buffer.sb.material.pipeline_state;
-//////       // default_pipeline_state = pr_sb_buffer.sb.material.pipeline_state;
+        uint32_t size = (uint32_t)buffer_size;
+        matrix_buffer = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
+        Assert(matrix_buffer.buffer);
+        matrix_buffer_arena = AllocatePartition(size,matrix_buffer.data);
     }
 
     void Init()
@@ -280,7 +277,6 @@ namespace OpenGLEmu
     //than if the amount of unused textures grows beyone a certain limit release the resources back to the GPU.
     //Could use resource heaps if we really want to ball before now... just doing the easiest thing.
     //For now we just do the N frame counting scheme and revisit this later.
-
     void GLDeleteTexture(GLTexture* texture)
     {
         BeginTicketMutex(&texture_mutex);
@@ -302,7 +298,7 @@ namespace OpenGLEmu
         ttk.allowGPUOptimizedContents = texture->texture.descriptor.allowGPUOptimizedContents;
         ttk.gl_tex_id = texture->id;
 
-//If we are not in the texturecache cant delete it since its not a texture we know about.
+        //If we are not in the texturecache cant delete it since its not a texture we know about.
         //And is not already been added to the released textures table.
         if(AnythingCacheCode::DoesThingExist(&gl_texturecache,&ttk))
         {
@@ -352,7 +348,6 @@ namespace OpenGLEmu
             int a = 0;
         }
         GLTextureKey ttk = {};
-//        ttk.api_internal_ptr = texture.texture.state;
         ttk.format = texture.texture.descriptor.pixelFormat;
         ttk.width = texture.texture.descriptor.width;
         ttk.height = texture.texture.descriptor.height;
@@ -373,8 +368,6 @@ namespace OpenGLEmu
         return result;        
     }
 
-    //TODO(Ray):Add a list that has the list of iterable / non free entries in the anythings
-    //so we can iterate over just the current non free entries in the list. rather than what we are doing now
     void CheckPurgeTextures()
     {
 //NOTE(RAY):Making sure that we do not add or remove textures at this point or beyond.
@@ -452,15 +445,13 @@ namespace OpenGLEmu
         }
         return result;
     }
-    
 //end Draw
-    //TODO(Ray):Probably this is a bad idea 
+    
     SamplerDescriptor GetSamplerDescriptor()
     {
         return samplerdescriptor;        
     }
 
-    //TODO(Ray):Rename this later
     SamplerDescriptor GetDefaultDescriptor()
     {
         return defaults;
@@ -525,8 +516,6 @@ namespace OpenGLEmu
         AnythingCacheCode::AddThing(&buffercache,(void*)&tt,&buffer);
     }
 
-    //Add a key to the list pointing to the buffer that is previously allocated.
-    //if the key is a duplicate no need to add it.
     void AddBindingToBuffer(uint64_t buffer_key,uint64_t key)
     {
         uint64_t tt = key;
@@ -560,7 +549,6 @@ namespace OpenGLEmu
     
     void AddFragTextureBinding(GLTexture texture,uint32_t tex_index,uint32_t sampler_index)
     {
- //      Assert(!texture.texture.is_released);
         Assert(texture.texture.state);
         Assert(texture.sampler.state);
 
@@ -607,6 +595,7 @@ namespace OpenGLEmu
         range_of_current_bound_frag_textures = start_count;
     }
 
+    //TODO(Ray):Add and test this someday
 /*
     void AddVertTextureBinding(Texture texture,uint32_t index)
     {
@@ -670,7 +659,7 @@ namespace OpenGLEmu
     UniformBindResult AddUniformDataAtBinding(uint64_t bindkey,void* uniform_data,memory_index size)
     {
         UniformBindResult result;
-//Assert(size < Kilobytes(2))
+
         CPUBuffer* buf = GetCPUBufferAtBinding(bindkey);
         float2 oldft = float2(0.0f);
 
@@ -683,7 +672,6 @@ namespace OpenGLEmu
         float2 newft = float2(oldft.y(),oldft.y() + size);
         YoyoStretchPushBack(&buf->ranges,newft);
 
-//        float2 getf = *YoyoPeekVectorElement(float2, &buf->ranges);
         partition_push_params params = DefaultPartitionParams();
         params.Flags = PartitionFlag_None;
 
@@ -719,12 +707,6 @@ namespace OpenGLEmu
     }
 
 //Shaders
-    //NOTE(Ray):Will try to emulate teh opengl api a lil closer
-    //but dont make it better than the real opengl? lets see
-    //ahhhnever mind no time for that shit... 
-//    GLuint glCreateShader(	GLenum shaderType);    
-//    void glShaderSource(GLuint shader,GLsizei count,const GLchar **string,const GLint *length);
-//    void glCompileShader(GLuint shader);
     GLProgram GetDefaultProgram()
     {
         return default_program;
@@ -744,12 +726,9 @@ namespace OpenGLEmu
         result.last_fragment_data_index = 0;
         result.last_vertex_buffer_binding = uniform_buffer_bindkey;
         result.last_vertex_data_index = 0;
-        //TODO(Ray):Should return the key?
         GLProgramKey program_hash_key = {(uint64_t)s.vs_object,(uint64_t)s.ps_object};
         AnythingCacheCode::AddThing(&programcache,(void*)&program_hash_key,&result);
         GLProgram* p = GetProgramPtr(program_hash_key);
-//        p->id = hash_key;
-//        result.id = hash_key;
         return result;
     }
 
@@ -762,20 +741,12 @@ namespace OpenGLEmu
     {
         return GetThingPtr(&programcache,&key,GLProgram);
     }
-
-/*
-    GLProgram* GetProgramPtrByID(uint64_t key)
-    {
-        return GetThingByKeyPtr(&programcache,key,GLProgram);
-    }
-*/
     
     uint32_t GetDepthStencilStateCount()
     {
         return depth_stencil_state_cache.anythings.count;
     }
 
-    //NOTE(Ray):This is very not good at the moment
     DepthStencilDescription GetCurrentDepthStencilState()
     {
         return ds;
@@ -789,7 +760,6 @@ namespace OpenGLEmu
     UniformBindResult AddUniData(uint32_t buffer_binding,uint32_t data_index,GLProgram* p,uint32_t size)
     {
         BufferOffsetResult last = OpenGLEmu::GetUniformAtBinding(buffer_binding,data_index);
-        //Assert(last.size == size);
         return AddUniformDataAtBinding(buffer_binding,last.ptr,size);
     }
     
@@ -850,13 +820,12 @@ namespace OpenGLEmu
         return TexImage2D(texels,dim,format,sd,usage);
     }
 
-    //TODO(Ray):Ensure we never try to add a uniform state that is larget than 2kb
+    //NOTE(Ray):No uniform state can be larger than 2kb limitation of the SetVertexBytes API in METAL
     //NOTE(Ray):Unlike gl We provide the last known state of the uniform data to the user so they can manipulate
     //it how they see fit at each state more explicitely.
     void* SetUniformsFragment_(memory_index size)
     {
         Assert(size <= KiloBytes(4));
-        //GLProgramKey key = {current_program.shader,current_program.vd};
         GLProgramKey key = {(uint64_t)current_program.shader.vs_object,(uint64_t)current_program.shader.ps_object};
         GLProgram* p = OpenGLEmu::GetProgramPtr(key);
         Assert(p);
@@ -877,9 +846,8 @@ namespace OpenGLEmu
         p->last_vertex_buffer_binding = p->last_vertex_buffer_binding;
         return result.ptr;
     }
-
     
-    //NOTE(Ray):No sparese entries in tables.
+    //NOTE(Ray):No sparse entries in tables.
     uint32_t AddDrawCallEntry(BufferOffsetResult v_uni_bind,BufferOffsetResult f_uni_bind,BufferOffsetResult tex_binds)
     {
         UniformBindingTableEntry ue;
@@ -897,7 +865,6 @@ namespace OpenGLEmu
         uint32_t index = YoyoStretchPushBack(&draw_tables.texture_binding_table,tex_entry);
         
         draw_index++;
-        //pr_sb_buffer.uniform_table_index = 0;
         Assert(index == vf_index);
         return index;
     }
@@ -906,7 +873,6 @@ namespace OpenGLEmu
     {
         range_of_current_bound_buffers = float2(range_of_current_bound_buffers.y());
         range_of_current_bound_frag_textures = float2(range_of_current_bound_frag_textures.y());
-
         draw_index++;        
     }
 
@@ -972,13 +938,14 @@ namespace OpenGLEmu
         range_of_current_bound_buffers = float2(0.0f);
         range_of_current_bound_frag_textures = float2(0.0f);
         RenderSynchronization::DispatchSemaphoreWait(&semaphore,YOYO_DISPATCH_TIME_FOREVER);
-//Only move our buffers forward if the we got a signal that the buffers are donen writing writing.        
+
+        //IMPORTANT(RAY):This must be done after the semaphore! Wait for the gpu to signal its done before
+        //we move to the next buffer
         current_buffer_index = (current_buffer_index + 1) %  buffer_count;
 
         CheckPurgeTextures();
     }
-    
-    //TODO(Ray):Should be renamed
+
     void GLBlending(uint64_t gl_src,uint64_t gl_dst)
     {
         AddHeader(glemu_bufferstate_blend_change);
@@ -1055,8 +1022,7 @@ namespace OpenGLEmu
         AddHeader(glemu_bufferstate_end);
         GLEMUFramebufferEnd* command = AddCommand(GLEMUFramebufferEnd);       
     }
-    
-//Depth and stencil
+
     void EnableStencilTest()
     {
         AddHeader(glemu_bufferstate_stencil_enable);
@@ -1308,9 +1274,9 @@ namespace OpenGLEmu
         command->current_count = current_count;
         EndDraw(unit_size);
 
-//#if GLEMU_DEBUG
+#if GLEMU_DEBUG
         VerifyCommandBuffer(glemu_bufferstate_draw_arrays);
-//#endif
+#endif
         
     }
 
@@ -1341,10 +1307,9 @@ namespace OpenGLEmu
         command->current_count = current_count;
         EndDraw(unit_size);
 
-
-//#if GLEMU_DEBUG
+#if GLEMU_DEBUG
         VerifyCommandBuffer(glemu_bufferstate_draw_arrays);
-//#endif
+#endif
         
     }
      
@@ -1358,13 +1323,12 @@ namespace OpenGLEmu
     {
         void* c_buffer = RenderEncoderCode::CommandBuffer();
 
-//define start values for the gl render state    
+        //define start values for the gl render state    
         ScissorRect default_s_rect = {0,0,(int)RendererCode::dim.x(),(int)RendererCode::dim.y()};
         ScissorRect s_rect_value = default_s_rect;
         Drawable current_drawable = RenderEncoderCode::GetDefaultDrawableFromView();
         
         DepthStencilDescription current_depth_desc = OpenGLEmu::GetDefaultDepthStencilDescriptor();
-        //TODO(Ray):Make sure this is set.
         GLProgram current_program = {};
         GLProgram default_program = {};
         TripleGPUBuffer* default_bind_buffer = OpenGLEmu::GetBufferAtBinding(0);
@@ -1383,7 +1347,7 @@ namespace OpenGLEmu
             in_params.pipeline_state = default_pipeline_state;
 
             RenderPipelineState prev_pso = {};
-            RenderPassDescriptor current_pass_desc = default_render_pass_descriptor;//pr_sb_buffer.render_pass_descriptor;
+            RenderPassDescriptor current_pass_desc = default_render_pass_descriptor;
             RenderPassDescriptor prev_pass_desc = {};
             RenderPassDescriptor last_set_pass_desc = {};
             Texture render_texture = current_drawable.texture;
@@ -1397,7 +1361,7 @@ namespace OpenGLEmu
             while (current_command_index < command_list.count)
             {
                 GLEMUCommandHeader* header = (GLEMUCommandHeader*)at;
-                at = (uint8_t*)at + sizeof(GLEMUCommandHeader);// Pop(at,GLEMUCommandHeader);//(GLEMUCommandHeader*)at;
+                at = (uint8_t*)at + sizeof(GLEMUCommandHeader);
                 GLEMUBufferState command_type = header->type;
                  ++current_command_index;
 
@@ -1421,7 +1385,9 @@ namespace OpenGLEmu
                      RenderEncoderCode::SetFrontFaceWinding(&re,winding_order_counter_clockwise);
                      in_params.re = re;
                      last_set_pass_desc = current_pass_desc;
-//                            PlatformOutput(debug_out_general,"Setting last set_pass_desc\n");                            
+#if METALIZER_DEBUG_OUTPUT
+                     PlatformOutput(debug_out_general,"Setting last set_pass_desc\n");
+#endif
                      //Verify and set pipeline states attachments to the same as our current renderpass
                      //Do depth and stencil only for now bu tlater we want to ensure that our color attachments match as well.
                      if(in_params.pipeline_state.desc.depthAttachmentPixelFormat != current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat)
@@ -1429,7 +1395,7 @@ namespace OpenGLEmu
                          RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
                          pd.depthAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
                          pd.stencilAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
-                         // || current_pass_desc.depth_attachment.description.texture.is_released
+
                          //if its and someone tried to use it should just set it as a non texture
                          //and sync everything  just dont let client use invalid textures as color attachments
                          //put out a warning or silently fail?
@@ -1439,7 +1405,10 @@ namespace OpenGLEmu
                              pd.stencilAttachmentPixelFormat = PixelFormatInvalid;
                          }
 
-//                                PlatformOutput(debug_out_general,"NewPIpelineState::pd\n");                            
+#if METALIZER_DEBUG_OUTPUT
+                         PlatformOutput(debug_out_general,"NewPIpelineState::pd\n");
+#endif
+                         
                          RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
                          Assert(next_pso.desc.fragment_function);
                          Assert(next_pso.desc.sample_count == 1);
@@ -1464,14 +1433,11 @@ namespace OpenGLEmu
                              temp_rect_value.width += diffw;
                          if(diffh < 0)
                              temp_rect_value.height += diffh;
-                         //TODO(Ray):Look for a way to get rid of these checks.
+
                          temp_rect_value.x = clamp(temp_rect_value.x,0,current_render_texture.descriptor.width);
                          temp_rect_value.y = clamp(temp_rect_value.y,0,current_render_texture.descriptor.height);
                          temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width - temp_rect_value.x);
                          temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height - temp_rect_value.y);
-
-//                                float final_width = clamp(,0,current_render_texture.descriptor.width);
-//                                float final_height = clamp(,0,current_render_texture.descriptor.height);
                                 
                          in_params.s_rect = temp_rect_value;
                          RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
@@ -1520,7 +1486,11 @@ namespace OpenGLEmu
                          Assert(current_pass_desc.stencil_attachment.description.texture.state);
                          render_texture = current_drawable.texture;
                          RenderEncoderCode::EndEncoding(&in_params.re);
-//                                PlatformOutput(debug_out_general,"Framebuffer_framebuffer_end::New Pipeline State\n");
+
+#if METALIZER_DEBUG_OUTPUT
+                         PlatformOutput(debug_out_general,"Framebuffer_framebuffer_end::New Pipeline State\n");
+#endif
+                         
                          init_params = false;                                
                      }
                      continue;
@@ -1533,7 +1503,7 @@ namespace OpenGLEmu
                      //Than after the clear set them back to defaults
                      if(command->write_mask_value & (1 << 1))
                      {
-                         //color pass clear
+
                          RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
                          ca->description.loadAction = LoadActionClear;
                          ca->clear_color = current_clear_color;
@@ -1608,12 +1578,12 @@ namespace OpenGLEmu
                      GLEMUBlendCommand* command = Pop(at,GLEMUBlendCommand);
                      BlendFactor source = command->sourceRGBBlendFactor;
                      BlendFactor dest = command->destinationRGBBlendFactor;
-                     //NOTE(Ray):If we actually were trying to write an opengl Emulator full on we would need to test every single attachment descriptor
+
                      RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
                      RenderPipelineColorAttachmentDescriptor cad = in_params.pipeline_state.desc.color_attachments.i[0];
 //                            if(cad.sourceRGBBlendFactor != source || cad.destinationRGBBlendFactor != dest)
                      {
-                         //changeBlendFactors
+
                          Assert((int)source >= 0);
                          Assert((int)dest >= 0);
                                 
@@ -1628,8 +1598,9 @@ namespace OpenGLEmu
                          Assert(next_pso.desc.sample_count == 1);
                          Assert(next_pso.desc.vertex_function);
                          Assert(next_pso.state);
-
-//                                PlatformOutput(debug_out_general,"Framebuffer_blend_change::New Pipeline State\n");
+#if METALIZER_DEBUG_OUTPUT
+                                PlatformOutput(debug_out_general,"Framebuffer_blend_change::New Pipeline State\n");
+#endif
                          in_params.pipeline_state = next_pso;
                          RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
                      }
@@ -1642,7 +1613,6 @@ namespace OpenGLEmu
 //                            if(sbb->gl_program.id != current_program.id)
                      {
                          GLProgram new_program = command->program;
-                         //                       current_vertex_buffer = OpenGLEmu::GetBufferAtBinding(0);
                          RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
                          pd.vertex_function = new_program.shader.vs_object;
                          pd.fragment_function = new_program.shader.ps_object;
@@ -1656,8 +1626,9 @@ namespace OpenGLEmu
                          Assert(next_pso.desc.sample_count == 1);
                          Assert(next_pso.desc.vertex_function);
                          Assert(next_pso.state);
-                                
-//                                PlatformOutput(debug_out_general,"Framebuffer_shader_program_change::New Pipeline State\n");
+#if METALIZER_DEBUG_OUTPUT                                
+                         PlatformOutput(debug_out_general,"Framebuffer_shader_program_change::New Pipeline State\n");
+#endif
                          current_program = new_program;
                          in_params.pipeline_state = next_pso;
                          RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
@@ -1692,7 +1663,6 @@ namespace OpenGLEmu
                      ScissorRect temp_rect_value = command->s_rect;
                      //NOTE(Ray):GL is from bottom left we are top left converting y cooridinates to match
                      temp_rect_value.y = current_render_texture.descriptor.height - (temp_rect_value.height + temp_rect_value.y);
-                     //temp_rect_value.height = default_s_rect.height - temp_rect_value.height;
                      //NOTE(Ray):Not allowed to specify a value outside of the current renderpass width in metal.
                      int diffw = (int)current_render_texture.descriptor.width - (temp_rect_value.x + temp_rect_value.width);
                      int diffh = (int)current_render_texture.descriptor.height - (temp_rect_value.y + temp_rect_value.height);
@@ -1701,15 +1671,14 @@ namespace OpenGLEmu
                      if(diffh < 0)
                          temp_rect_value.height += diffh;
 
-                     //TODO(Ray):Look for a way to get rid of these checks.
                      temp_rect_value.x = clamp(temp_rect_value.x,0,current_render_texture.descriptor.width);
                      temp_rect_value.y = clamp(temp_rect_value.y,0,current_render_texture.descriptor.height);
-//                            temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width);
-//                            temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height);
                      temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width - temp_rect_value.x);
                      temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height - temp_rect_value.y);
 
-//                            PlatformOutput(debug_out_general,"Scissor Rect Change\n");                            
+#if METALIZER_DEBUG_OUTPUT
+                     PlatformOutput(debug_out_general,"Scissor Rect Change\n");
+#endif
                      s_rect_value = temp_rect_value;
                      in_params.s_rect = temp_rect_value;
                      if(in_params.is_s_rect)
@@ -1724,11 +1693,13 @@ namespace OpenGLEmu
                      GLEMUStencilStateCommand* command = Pop(at,GLEMUStencilStateCommand);
                             
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
-//                            char* string = "Stencil Enabled:";
-//                            RenderDebug::InsertDebugSignPost(in_params.re,string);
+                     char* string = "Stencil Enabled:";
+                     RenderDebug::InsertDebugSignPost(in_params.re,string);
 #endif
 //                            RenderDebug::PushDebugGroup(in_params.re,string);
-//                            PlatformOutput(debug_out_general,"Framebuffer_stencil_enable\n");
+#if METALIZER_DEBUG_OUTPUT
+                     PlatformOutput(debug_out_general,"Framebuffer_stencil_enable\n");
+#endif
                      //NOTE("Must havea  stencil buffer attached here");
                      //The stencil should be the same size as the render target.
                      //if not fragments out of the bounds of the stencil surface will get clipped.
@@ -1746,7 +1717,9 @@ namespace OpenGLEmu
                          //start a new encoder with a valid texture set on the render pass descriptor.
                          RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                          RenderEncoderCode::EndEncoding(&in_params.re);
-//                                PlatformOutput(debug_out_general,"End Encoding Setting renderpassdesc to have texture\n");
+#if METALIZER_DEBUG_OUTPUT
+                         PlatformOutput(debug_out_general,"End Encoding Setting renderpassdesc to have texture\n");
+#endif
                          init_params = false;                                                          
                      }
                      continue;
@@ -1761,8 +1734,8 @@ namespace OpenGLEmu
                      RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
                      RenderDebug::PopDebugGroup(in_params.re);
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
-//                            char* string = "Stencil Disabled:";
-//                            RenderDebug::InsertDebugSignPost(in_params.re,string);
+                     char* string = "Stencil Disabled:";
+                     RenderDebug::InsertDebugSignPost(in_params.re,string);
 #endif
                      continue;
                  }
@@ -1919,12 +1892,16 @@ namespace OpenGLEmu
                      if(uni_entry.v_size > 0)
                      {
                          RenderEncoderCode::SetVertexBytes(&in_params.re,uni_entry.v_data,uni_entry.v_size,4);
-//                                PlatformOutput(debug_out_uniforms,"UniformBinding table entry : v_size :%d :  buffer index %d \n",uni_entry.v_size,4);
+#if METALIZER_INSERT_DEBUGSIGNPOST
+                         PlatformOutput(debug_out_uniforms,"UniformBinding table entry : v_size :%d :  buffer index %d \n",uni_entry.v_size,4);
+#endif
                      }
                      if(uni_entry.f_size > 0)
                      {
+#if METALIZER_INSERT_DEBUGSIGNPOST
                          RenderEncoderCode::SetFragmentBytes(&in_params.re,uni_entry.f_data,uni_entry.f_size,4);
-//                                PlatformOutput(debug_out_uniforms,"UnidformBinding table entry : f_size :%d : buffer index %d \n",uni_entry.f_size,4);
+                         PlatformOutput(debug_out_uniforms,"UnidformBinding table entry : f_size :%d : buffer index %d \n",uni_entry.f_size,4);
+#endif
                      }
                             
 //TExture bindings here
@@ -1942,7 +1919,9 @@ namespace OpenGLEmu
                          BeginTicketMutex(&texture_mutex);                                
                          if(GLIsValidTexture(final_tex))
                          {
-//                                    PlatformOutput(debug_out_high,"Attempt To bind invalid texture Invalid texture  \n");
+#ifdef METALIZER_INSERT_DEBUGSIGNPOST
+                             PlatformOutput(debug_out_high,"Attempt To bind invalid texture Invalid texture  \n");
+#endif
                          }
                          else
                          {
@@ -1956,8 +1935,10 @@ namespace OpenGLEmu
                          //for now all textures use the sampler index 0 and they must have one defined.
                          //In other words a GLTexture at teh moment means you have a sampler with you by default.
                          RenderEncoderCode::SetFragmentSamplerState(&in_params.re,&final_tex.sampler,entry->sampler_index);
-//                                PlatformOutput(debug_out_high,"texture binding entry : index:%d : range index %d \n",entry->tex_index,i);
-//                                PlatformOutput(debug_out_high,"sampler binding entry : index:%d : range index %d \n",entry->sampler_index,i);
+#ifdef METALIZER_DEBUG_OUTPUT
+                         PlatformOutput(debug_out_high,"texture binding entry : index:%d : range index %d \n",entry->tex_index,i);
+                         PlatformOutput(debug_out_high,"sampler binding entry : index:%d : range index %d \n",entry->sampler_index,i);
+#endif
                      }
 
                      //TODO(Ray):For every vertex or fragment texture binding add a binding if there is no
@@ -1974,7 +1955,10 @@ namespace OpenGLEmu
 //                                PlatformOutput(debug_out_high,"buffer binding entry : index:%d : offset %d : range index %d \n",entry->index,entry->offset,i);
                      }
 
+#ifdef METALIZER_DEBUG_OUTPUT
                      PlatformOutput(true, "GLEMU DrawingPrimitive.\n");
+#endif
+                     
                      RenderCommandEncoder re = in_params.re;
 
                      uint32_t bi = current_buffer_index;
