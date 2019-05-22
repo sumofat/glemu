@@ -1,7 +1,7 @@
 //NOTE(Ray):Please refer to the readme before inclusion into your project
 
 #if !defined(OPENGLEMU_H)
-
+#define METALIZER_INSERT_DEBUGSIGNPOST 1
 //glemu constant defines
 #define GLEMU_MAX_ATLAS_PER_SPRITE_BATCH 10
 #define GLEMU_MAX_PSO_STATES 4000
@@ -211,6 +211,7 @@ struct GLEMUFramebufferStart
 
 struct GLEMUFramebufferEnd
 {
+    uint32_t placeholder;
 	//nothing fo now
 };
 

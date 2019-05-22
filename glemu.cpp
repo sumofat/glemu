@@ -83,6 +83,22 @@ namespace OpenGLEmu
     RenderPipelineState prev_frame_pipeline_state;
     RenderPipelineState default_pipeline_state;
     Texture default_depth_stencil_texture;
+
+    void VerifyCommandBuffer(GLEMUBufferState state)
+    {
+        u32 current_command_index = 0;
+        uint32_t index = 0;
+        while (index < command_list.count)
+        {
+            GLEMUCommandHeader* header = (GLEMUCommandHeader*)command_list.buffer.base;
+            GLEMUBufferState command_type = header->type;
+            if(index == command_list.count)
+            {
+                Assert(state == header->type);                
+            }
+            ++index;
+        }
+    }
     
     VertexDescriptor CreateDefaultVertexDescriptor()
     {
@@ -1267,6 +1283,7 @@ namespace OpenGLEmu
     //TODO(Ray):These will clean up nice once we get uniform variable support
     void DrawArrays(uint32_t current_count,uint32_t unit_size)
     {
+        Assert(current_count != 0);
         AddHeader(glemu_bufferstate_draw_arrays);
         GLEMUDrawArraysCommand* command = AddCommand(GLEMUDrawArraysCommand);                
         command->is_from_to = true;
@@ -1284,24 +1301,26 @@ namespace OpenGLEmu
 
         BufferOffsetResult v_uni_bind_result = OpenGLEmu::GetUniformAtBinding(v_buffer_binding,v_data_index);
         BufferOffsetResult f_uni_bind_result = OpenGLEmu::GetUniformAtBinding(f_buffer_binding,f_data_index);
-
         BufferOffsetResult tex_binds = {};
-
         command->uniform_table_index = OpenGLEmu::AddDrawCallEntry(v_uni_bind_result,f_uni_bind_result,tex_binds);
         command->buffer_range = range_of_current_bound_buffers;
         command->texture_buffer_range = range_of_current_bound_frag_textures;
         command->current_count = current_count;
-//TODO(Ray):Do we need the current count ?
         EndDraw(unit_size);
+
+//#if GLEMU_DEBUG
+        VerifyCommandBuffer(glemu_bufferstate_draw_arrays);
+//#endif
+        
     }
 
     void DrawArrayPrimitives(uint32_t current_count,uint32_t unit_size)
     {
+        Assert(current_count != 0);
         AddHeader(glemu_bufferstate_draw_arrays);
         GLEMUDrawArraysCommand* command = AddCommand(GLEMUDrawArraysCommand);                
         command->is_from_to = true;
         command->is_primitive_triangles = true;
-
         command->topology = topology_triangle;
 
         GLProgramKey key = {(uint64_t)current_program.shader.vs_object,(uint64_t)current_program.shader.ps_object};
@@ -1315,15 +1334,18 @@ namespace OpenGLEmu
 
         BufferOffsetResult v_uni_bind_result = OpenGLEmu::GetUniformAtBinding(v_buffer_binding,v_data_index);
         BufferOffsetResult f_uni_bind_result = OpenGLEmu::GetUniformAtBinding(f_buffer_binding,f_data_index);
-
         BufferOffsetResult tex_binds = {};
-
         command->uniform_table_index = OpenGLEmu::AddDrawCallEntry(v_uni_bind_result,f_uni_bind_result,tex_binds);
         command->buffer_range = range_of_current_bound_buffers;
         command->texture_buffer_range = range_of_current_bound_frag_textures;
         command->current_count = current_count;
-        
         EndDraw(unit_size);
+
+
+//#if GLEMU_DEBUG
+        VerifyCommandBuffer(glemu_bufferstate_draw_arrays);
+//#endif
+        
     }
      
 #define Pop(ptr,type) (type*)Pop_(ptr,sizeof(type));ptr = (uint8_t*)ptr + (sizeof(type));
@@ -1331,7 +1353,7 @@ namespace OpenGLEmu
    {
        return ptr;
    }
-    
+
     void Execute()
     {
         void* c_buffer = RenderEncoderCode::CommandBuffer();
@@ -1378,331 +1400,328 @@ namespace OpenGLEmu
                 at = (uint8_t*)at + sizeof(GLEMUCommandHeader);// Pop(at,GLEMUCommandHeader);//(GLEMUCommandHeader*)at;
                 GLEMUBufferState command_type = header->type;
                  ++current_command_index;
-//                switch(command_type)
-                {
-                    {
-//                        case glemu_bufferstate_debug_signpost:(framebuffer_state == framebuffer_debug_signpost)
-                        if(command_type == glemu_bufferstate_debug_signpost)
-                        {
-                            
+
+                 if(command_type == glemu_bufferstate_debug_signpost)
+                 {
+                     GLEMUAddDebugSignPostCommand* command = Pop(at,GLEMUAddDebugSignPostCommand);                            
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
-//                            RenderDebug::InsertDebugSignPost(in_params.re,sbb->string);
+                     RenderDebug::InsertDebugSignPost(in_params.re,command->string);
 #endif
-                            continue;    
-                        }
+                     continue;    
+                 }
                         
-                        if(!init_params)
-                        {
-                            RenderEncoderCode::SetRenderPassColorAttachmentTexture(&render_texture,&current_pass_desc,0);
-                            RenderEncoderCode::SetRenderPassColorAttachmentDescriptor(&current_pass_desc,0);
-                            RendererCode::SetRenderPassDescriptor(&current_pass_desc);
-                            current_render_texture = render_texture;                            
-                            render_encoder_count++;
-                            RenderCommandEncoder re = RenderEncoderCode::RenderCommandEncoderWithDescriptor(c_buffer,&current_pass_desc);
-                            RenderEncoderCode::SetFrontFaceWinding(&re,winding_order_counter_clockwise);
-                            in_params.re = re;
-                            last_set_pass_desc = current_pass_desc;
+                 if(!init_params)
+                 {
+                     RenderEncoderCode::SetRenderPassColorAttachmentTexture(&render_texture,&current_pass_desc,0);
+                     RenderEncoderCode::SetRenderPassColorAttachmentDescriptor(&current_pass_desc,0);
+                     RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+                     current_render_texture = render_texture;                            
+                     render_encoder_count++;
+                     RenderCommandEncoder re = RenderEncoderCode::RenderCommandEncoderWithDescriptor(c_buffer,&current_pass_desc);
+                     RenderEncoderCode::SetFrontFaceWinding(&re,winding_order_counter_clockwise);
+                     in_params.re = re;
+                     last_set_pass_desc = current_pass_desc;
 //                            PlatformOutput(debug_out_general,"Setting last set_pass_desc\n");                            
-                            //Verify and set pipeline states attachments to the same as our current renderpass
-                            //Do depth and stencil only for now bu tlater we want to ensure that our color attachments match as well.
-                            if(in_params.pipeline_state.desc.depthAttachmentPixelFormat != current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat)
-                            {
-                                RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
-                                pd.depthAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
-                                pd.stencilAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
-                                // || current_pass_desc.depth_attachment.description.texture.is_released
-                                //if its and someone tried to use it should just set it as a non texture
-                                //and sync everything  just dont let client use invalid textures as color attachments
-                                //put out a warning or silently fail?
-                                if(current_pass_desc.depth_attachment.description.texture.state == nullptr)
-                                {
-                                    pd.depthAttachmentPixelFormat = PixelFormatInvalid;
-                                    pd.stencilAttachmentPixelFormat = PixelFormatInvalid;
-                                }
+                     //Verify and set pipeline states attachments to the same as our current renderpass
+                     //Do depth and stencil only for now bu tlater we want to ensure that our color attachments match as well.
+                     if(in_params.pipeline_state.desc.depthAttachmentPixelFormat != current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat)
+                     {
+                         RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
+                         pd.depthAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
+                         pd.stencilAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
+                         // || current_pass_desc.depth_attachment.description.texture.is_released
+                         //if its and someone tried to use it should just set it as a non texture
+                         //and sync everything  just dont let client use invalid textures as color attachments
+                         //put out a warning or silently fail?
+                         if(current_pass_desc.depth_attachment.description.texture.state == nullptr)
+                         {
+                             pd.depthAttachmentPixelFormat = PixelFormatInvalid;
+                             pd.stencilAttachmentPixelFormat = PixelFormatInvalid;
+                         }
 
 //                                PlatformOutput(debug_out_general,"NewPIpelineState::pd\n");                            
-                                RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
-                                Assert(next_pso.desc.fragment_function);
-                                Assert(next_pso.desc.sample_count == 1);
-                                Assert(next_pso.desc.vertex_function);
-                                Assert(next_pso.state);
+                         RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
+                         Assert(next_pso.desc.fragment_function);
+                         Assert(next_pso.desc.sample_count == 1);
+                         Assert(next_pso.desc.vertex_function);
+                         Assert(next_pso.state);
 
-                                RenderEncoderCode::SetRenderPipelineState(&in_params.re,next_pso.state);
-                                prev_pso = in_params.pipeline_state;
-                                in_params.pipeline_state = next_pso;
-                            }
+                         RenderEncoderCode::SetRenderPipelineState(&in_params.re,next_pso.state);
+                         prev_pso = in_params.pipeline_state;
+                         in_params.pipeline_state = next_pso;
+                     }
 
-                            //NOTE(Ray):If we are scissor enable we need to clamp the scissor rect to the rendertarget surface
-                            if(in_params.is_s_rect)
-                            {
-                                ScissorRect temp_rect_value = in_params.s_rect;
-                                //NOTE(Ray):GL is from bottom left we are top left converting y cooridinates to match
-                                temp_rect_value.y = default_s_rect.y - temp_rect_value.y;
-                                //NOTE(Ray):Not allowed to specify a value outside of the current renderpass width in metal.
-                                int diffw = (int)current_render_texture.descriptor.width - (temp_rect_value.x + temp_rect_value.width);
-                                int diffh = (int)current_render_texture.descriptor.height - (temp_rect_value.y + temp_rect_value.height);
-                                if(diffw < 0)
-                                    temp_rect_value.width += diffw;
-                                if(diffh < 0)
-                                    temp_rect_value.height += diffh;
-                                //TODO(Ray):Look for a way to get rid of these checks.
-                                temp_rect_value.x = clamp(temp_rect_value.x,0,current_render_texture.descriptor.width);
-                                temp_rect_value.y = clamp(temp_rect_value.y,0,current_render_texture.descriptor.height);
-                                temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width - temp_rect_value.x);
-                                temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height - temp_rect_value.y);
+                     //NOTE(Ray):If we are scissor enable we need to clamp the scissor rect to the rendertarget surface
+                     if(in_params.is_s_rect)
+                     {
+                         ScissorRect temp_rect_value = in_params.s_rect;
+                         //NOTE(Ray):GL is from bottom left we are top left converting y cooridinates to match
+                         temp_rect_value.y = default_s_rect.y - temp_rect_value.y;
+                         //NOTE(Ray):Not allowed to specify a value outside of the current renderpass width in metal.
+                         int diffw = (int)current_render_texture.descriptor.width - (temp_rect_value.x + temp_rect_value.width);
+                         int diffh = (int)current_render_texture.descriptor.height - (temp_rect_value.y + temp_rect_value.height);
+                         if(diffw < 0)
+                             temp_rect_value.width += diffw;
+                         if(diffh < 0)
+                             temp_rect_value.height += diffh;
+                         //TODO(Ray):Look for a way to get rid of these checks.
+                         temp_rect_value.x = clamp(temp_rect_value.x,0,current_render_texture.descriptor.width);
+                         temp_rect_value.y = clamp(temp_rect_value.y,0,current_render_texture.descriptor.height);
+                         temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width - temp_rect_value.x);
+                         temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height - temp_rect_value.y);
 
 //                                float final_width = clamp(,0,current_render_texture.descriptor.width);
 //                                float final_height = clamp(,0,current_render_texture.descriptor.height);
                                 
-                                in_params.s_rect = temp_rect_value;
-                                RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
-                            }
-                            init_params = true;
-                        }
+                         in_params.s_rect = temp_rect_value;
+                         RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
+                     }
+                     init_params = true;
+                 }
                         
-                        if(command_type == glemu_bufferstate_start)
-                        {
-                            GLEMUFramebufferStart* command = Pop(at,GLEMUFramebufferStart);//(GLEMUFramebufferStart)at;
-                            if(command->texture.state != current_render_texture.state)
-                            {
-                                render_texture = command->texture;
+                 if(command_type == glemu_bufferstate_start)
+                 {
+                     GLEMUFramebufferStart* command = Pop(at,GLEMUFramebufferStart);//(GLEMUFramebufferStart)at;
+                     if(command->texture.state != current_render_texture.state)
+                     {
+                         render_texture = command->texture;
 
 //NOTE(Ray):Since we are setting a new render target framebuffer here we default the scissor rect to thte size of the
-                                prev_pass_desc = last_set_pass_desc;
+                         prev_pass_desc = last_set_pass_desc;
                                 
-                                RenderPassDescriptor temp_desc = last_set_pass_desc;
-                                //depth attachment description
-                                Texture no_tex = {};
-                                temp_desc.depth_attachment.description.texture       = no_tex;
-                                temp_desc.depth_attachment.description.loadAction    = LoadActionDontCare;
-                                temp_desc.depth_attachment.description.storeAction   = StoreActionDontCare;
+                         RenderPassDescriptor temp_desc = last_set_pass_desc;
+                         //depth attachment description
+                         Texture no_tex = {};
+                         temp_desc.depth_attachment.description.texture       = no_tex;
+                         temp_desc.depth_attachment.description.loadAction    = LoadActionDontCare;
+                         temp_desc.depth_attachment.description.storeAction   = StoreActionDontCare;
 
-                                temp_desc.stencil_attachment.description.texture       = no_tex;
-                                temp_desc.stencil_attachment.description.loadAction    = LoadActionDontCare;
-                                temp_desc.stencil_attachment.description.storeAction   = StoreActionDontCare;
+                         temp_desc.stencil_attachment.description.texture       = no_tex;
+                         temp_desc.stencil_attachment.description.loadAction    = LoadActionDontCare;
+                         temp_desc.stencil_attachment.description.storeAction   = StoreActionDontCare;
                                 
-                                RendererCode::SetRenderPassDescriptor(&temp_desc);
+                         RendererCode::SetRenderPassDescriptor(&temp_desc);
 
-                                current_pass_desc = temp_desc;
+                         current_pass_desc = temp_desc;
                                                                 
-                                RenderEncoderCode::EndEncoding(&in_params.re);
-                                init_params = false;                                
-                            }
-                            continue;
-                        }
+                         RenderEncoderCode::EndEncoding(&in_params.re);
+                         init_params = false;                                
+                     }
+                     continue;
+                 }
                     
-                        else if(command_type == glemu_bufferstate_end)
-                        {
-                            GLEMUFramebufferEnd* command = Pop(at,GLEMUFramebufferEnd);
-                            if(current_drawable.state != current_render_texture.state)
-                            {
-                                Assert(prev_pass_desc.stencil_attachment.description.texture.state);
-                                current_pass_desc = prev_pass_desc;
-                                Assert(current_pass_desc.stencil_attachment.description.texture.state);
-                                render_texture = current_drawable.texture;
-                                RenderEncoderCode::EndEncoding(&in_params.re);
+                 else if(command_type == glemu_bufferstate_end)
+                 {
+                     GLEMUFramebufferEnd* command = Pop(at,GLEMUFramebufferEnd);
+                     if(current_drawable.state != current_render_texture.state)
+                     {
+                         Assert(prev_pass_desc.stencil_attachment.description.texture.state);
+                         current_pass_desc = prev_pass_desc;
+                         Assert(current_pass_desc.stencil_attachment.description.texture.state);
+                         render_texture = current_drawable.texture;
+                         RenderEncoderCode::EndEncoding(&in_params.re);
 //                                PlatformOutput(debug_out_general,"Framebuffer_framebuffer_end::New Pipeline State\n");
-                                init_params = false;                                
-                            }
-                            continue;
-                        }
+                         init_params = false;                                
+                     }
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_clear_start)
-                        {
-                            GLEMUClearBufferCommand* command = Pop(at,GLEMUClearBufferCommand);                            
+                 else if(command_type == glemu_bufferstate_clear_start)
+                 {
+                     GLEMUClearBufferCommand* command = Pop(at,GLEMUClearBufferCommand);                            
 //Get buffer bits and than set the attachments to the state needed.
-                            //Than after the clear set them back to defaults
-                            if(command->write_mask_value & (1 << 1))
-                            {
-                                 //color pass clear
-                                RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
-                                ca->description.loadAction = LoadActionClear;
-                                ca->clear_color = current_clear_color;
-                            }
+                     //Than after the clear set them back to defaults
+                     if(command->write_mask_value & (1 << 1))
+                     {
+                         //color pass clear
+                         RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
+                         ca->description.loadAction = LoadActionClear;
+                         ca->clear_color = current_clear_color;
+                     }
 
-                            //TODO(Ray):Need to validate they  have actual stencil and depth textures attached if pipeline
-                            //has pixel format. 
-                            if(command->write_mask_value & (1 << 2))
-                            {
-                                current_pass_desc.depth_attachment.description.loadAction = LoadActionClear;                                
-                            }
-                            if(command->write_mask_value & (1 << 3))
-                            {
-                                current_pass_desc.stencil_attachment.description.loadAction = LoadActionClear;                                
-                            }
+                     //TODO(Ray):Need to validate they  have actual stencil and depth textures attached if pipeline
+                     //has pixel format. 
+                     if(command->write_mask_value & (1 << 2))
+                     {
+                         current_pass_desc.depth_attachment.description.loadAction = LoadActionClear;                                
+                     }
+                     if(command->write_mask_value & (1 << 3))
+                     {
+                         current_pass_desc.stencil_attachment.description.loadAction = LoadActionClear;                                
+                     }
                             
-                            RendererCode::SetRenderPassDescriptor(&current_pass_desc);
-                            RenderEncoderCode::EndEncoding(&in_params.re);
-                            init_params = false;
-                            continue;
-                        }
+                     RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+                     RenderEncoderCode::EndEncoding(&in_params.re);
+                     init_params = false;
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_clear_end)
-                        {
-                            GLEMUClearBufferCommand* command = Pop(at,GLEMUClearBufferCommand);
+                 else if(command_type == glemu_bufferstate_clear_end)
+                 {
+                     GLEMUClearBufferCommand* command = Pop(at,GLEMUClearBufferCommand);
 
 //for the time being we are always in load to better emulate what opengl does.
-                            RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
-                            ca->description.loadAction = LoadActionLoad;
-                            current_pass_desc.depth_attachment.description.loadAction = LoadActionLoad;                                
-                            current_pass_desc.stencil_attachment.description.loadAction = LoadActionLoad;
-                            RendererCode::SetRenderPassDescriptor(&current_pass_desc);
-                            RenderEncoderCode::EndEncoding(&in_params.re);
-                            init_params = false;
-                            continue;
-                        }
+                     RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
+                     ca->description.loadAction = LoadActionLoad;
+                     current_pass_desc.depth_attachment.description.loadAction = LoadActionLoad;                                
+                     current_pass_desc.stencil_attachment.description.loadAction = LoadActionLoad;
+                     RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+                     RenderEncoderCode::EndEncoding(&in_params.re);
+                     init_params = false;
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_clear_stencil_value)
-                        {
-                            GLEMUClearStencilCommand* command = Pop(at,GLEMUClearStencilCommand);
-                            continue;
-                        }
+                 else if(command_type == glemu_bufferstate_clear_stencil_value)
+                 {
+                     GLEMUClearStencilCommand* command = Pop(at,GLEMUClearStencilCommand);
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_clear_color_value)
-                        {
-                            GLEMUClearColorCommand* command = Pop(at,GLEMUClearColorCommand);                            
-                            current_clear_color = command->clear_color;
-                            continue;
-                        }
+                 else if(command_type == glemu_bufferstate_clear_color_value)
+                 {
+                     GLEMUClearColorCommand* command = Pop(at,GLEMUClearColorCommand);                            
+                     current_clear_color = command->clear_color;
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_clear_color_and_stencil_value)
-                        {
-                            GLEMUClearColorAndStencilCommand* command = Pop(at,GLEMUClearColorAndStencilCommand);
-                            current_clear_color = command->clear_color;
-                            continue;
-                        }
+                 else if(command_type == glemu_bufferstate_clear_color_and_stencil_value)
+                 {
+                     GLEMUClearColorAndStencilCommand* command = Pop(at,GLEMUClearColorAndStencilCommand);
+                     current_clear_color = command->clear_color;
+                     continue;
+                 }
         
-                        else if(command_type == glemu_bufferstate_viewport_change)
-                        {
-                            GLEMUViewportChangeCommand* command = Pop(at,GLEMUViewportChangeCommand);
-                            PlatformOutput(true, "Viewport w: %d h: %d .\n",command->viewport.x(),command->viewport.y());
+                 else if(command_type == glemu_bufferstate_viewport_change)
+                 {
+                     GLEMUViewportChangeCommand* command = Pop(at,GLEMUViewportChangeCommand);
+                     PlatformOutput(true, "Viewport w: %d h: %d .\n",command->viewport.x(),command->viewport.y());
                             
-                            //TODO(Ray):We need to add some checks here to keep viewport in surface bounds.
-                            in_params.viewport = command->viewport;
-                            float4 vp = in_params.viewport;
-                            RenderEncoderCode::SetViewport(&in_params.re,vp.x(),vp.y(),vp.z(),vp.w(),0.0f,1.0f);                            
-                            continue;
-                        }
+                     //TODO(Ray):We need to add some checks here to keep viewport in surface bounds.
+                     in_params.viewport = command->viewport;
+                     float4 vp = in_params.viewport;
+                     RenderEncoderCode::SetViewport(&in_params.re,vp.x(),vp.y(),vp.z(),vp.w(),0.0f,1.0f);                            
+                     continue;
+                 }
                         
-                        else if(command_type == glemu_bufferstate_blend_change)
-                        {
-                            GLEMUBlendCommand* command = Pop(at,GLEMUBlendCommand);
-                            BlendFactor source = command->sourceRGBBlendFactor;
-                            BlendFactor dest = command->destinationRGBBlendFactor;
-                            //NOTE(Ray):If we actually were trying to write an opengl Emulator full on we would need to test every single attachment descriptor
-                            RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
-                            RenderPipelineColorAttachmentDescriptor cad = in_params.pipeline_state.desc.color_attachments.i[0];
+                 else if(command_type == glemu_bufferstate_blend_change)
+                 {
+                     GLEMUBlendCommand* command = Pop(at,GLEMUBlendCommand);
+                     BlendFactor source = command->sourceRGBBlendFactor;
+                     BlendFactor dest = command->destinationRGBBlendFactor;
+                     //NOTE(Ray):If we actually were trying to write an opengl Emulator full on we would need to test every single attachment descriptor
+                     RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
+                     RenderPipelineColorAttachmentDescriptor cad = in_params.pipeline_state.desc.color_attachments.i[0];
 //                            if(cad.sourceRGBBlendFactor != source || cad.destinationRGBBlendFactor != dest)
-                            {
-                                //changeBlendFactors
-                                Assert((int)source >= 0);
-                                Assert((int)dest >= 0);
+                     {
+                         //changeBlendFactors
+                         Assert((int)source >= 0);
+                         Assert((int)dest >= 0);
                                 
-                                cad.sourceRGBBlendFactor = source;
-                                cad.sourceAlphaBlendFactor = source;
-                                cad.destinationRGBBlendFactor = dest;
-                                cad.destinationAlphaBlendFactor = dest;
-                                pd.color_attachments.i[0] = cad;
+                         cad.sourceRGBBlendFactor = source;
+                         cad.sourceAlphaBlendFactor = source;
+                         cad.destinationRGBBlendFactor = dest;
+                         cad.destinationAlphaBlendFactor = dest;
+                         pd.color_attachments.i[0] = cad;
                                 
-                                RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
-                                Assert(next_pso.desc.fragment_function);
-                                Assert(next_pso.desc.sample_count == 1);
-                                Assert(next_pso.desc.vertex_function);
-                                Assert(next_pso.state);
+                         RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
+                         Assert(next_pso.desc.fragment_function);
+                         Assert(next_pso.desc.sample_count == 1);
+                         Assert(next_pso.desc.vertex_function);
+                         Assert(next_pso.state);
 
 //                                PlatformOutput(debug_out_general,"Framebuffer_blend_change::New Pipeline State\n");
-                                in_params.pipeline_state = next_pso;
-                                RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
-                            }
-                            continue;
-                        }
+                         in_params.pipeline_state = next_pso;
+                         RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
+                     }
+                     continue;
+                 }
                        
-                        else if(command_type == glemu_bufferstate_shader_program_change)
-                        {
-                            GLEMUUseProgramCommand* command = Pop(at,GLEMUUseProgramCommand);
+                 else if(command_type == glemu_bufferstate_shader_program_change)
+                 {
+                     GLEMUUseProgramCommand* command = Pop(at,GLEMUUseProgramCommand);
 //                            if(sbb->gl_program.id != current_program.id)
-                            {
-                                GLProgram new_program = command->program;
-                                //                       current_vertex_buffer = OpenGLEmu::GetBufferAtBinding(0);
-                                RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
-                                pd.vertex_function = new_program.shader.vs_object;
-                                pd.fragment_function = new_program.shader.ps_object;
-                                RenderEncoderCode::SetVertexDescriptor(&pd, &new_program.vd);
+                     {
+                         GLProgram new_program = command->program;
+                         //                       current_vertex_buffer = OpenGLEmu::GetBufferAtBinding(0);
+                         RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
+                         pd.vertex_function = new_program.shader.vs_object;
+                         pd.fragment_function = new_program.shader.ps_object;
+                         RenderEncoderCode::SetVertexDescriptor(&pd, &new_program.vd);
                                 
-                                RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
+                         RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
 
-                                Assert(next_pso.desc.depthAttachmentPixelFormat == pd.depthAttachmentPixelFormat);
-                                Assert(next_pso.desc.stencilAttachmentPixelFormat == pd.stencilAttachmentPixelFormat);
-                                Assert(next_pso.desc.fragment_function);
-                                Assert(next_pso.desc.sample_count == 1);
-                                Assert(next_pso.desc.vertex_function);
-                                Assert(next_pso.state);
+                         Assert(next_pso.desc.depthAttachmentPixelFormat == pd.depthAttachmentPixelFormat);
+                         Assert(next_pso.desc.stencilAttachmentPixelFormat == pd.stencilAttachmentPixelFormat);
+                         Assert(next_pso.desc.fragment_function);
+                         Assert(next_pso.desc.sample_count == 1);
+                         Assert(next_pso.desc.vertex_function);
+                         Assert(next_pso.state);
                                 
 //                                PlatformOutput(debug_out_general,"Framebuffer_shader_program_change::New Pipeline State\n");
-                                current_program = new_program;
-                                in_params.pipeline_state = next_pso;
-                                RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
-                            }
-                            continue;
-                        }
+                         current_program = new_program;
+                         in_params.pipeline_state = next_pso;
+                         RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
+                     }
+                     continue;
+                 }
                     
-                        else if(command_type == glemu_bufferstate_scissor_test_enable)
-                        {
-                            GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
-                            in_params.is_s_rect = true;
-                            RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
-                            continue;
-                        }
+                 else if(command_type == glemu_bufferstate_scissor_test_enable)
+                 {
+                     GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
+                     in_params.is_s_rect = true;
+                     RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
+                     continue;
+                 }
                         
-                        else if(command_type == glemu_bufferstate_scissor_test_disable)
-                        {
-                            GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
-                            in_params.is_s_rect = false;
-                            ScissorRect new_s_rect = {};
-                            new_s_rect.width = current_render_texture.descriptor.width;
-                            new_s_rect.height = current_render_texture.descriptor.height;
-                            new_s_rect.x = 0;
-                            new_s_rect.y = 0;
-                            RenderEncoderCode::SetScissorRect(&in_params.re, new_s_rect);
-                            continue;
-                        }
+                 else if(command_type == glemu_bufferstate_scissor_test_disable)
+                 {
+                     GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
+                     in_params.is_s_rect = false;
+                     ScissorRect new_s_rect = {};
+                     new_s_rect.width = current_render_texture.descriptor.width;
+                     new_s_rect.height = current_render_texture.descriptor.height;
+                     new_s_rect.x = 0;
+                     new_s_rect.y = 0;
+                     RenderEncoderCode::SetScissorRect(&in_params.re, new_s_rect);
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_scissor_rect_change)
-                        {
-                            GLEMUScissorRectCommand* command = Pop(at,GLEMUScissorRectCommand);
-                            ScissorRect temp_rect_value = command->s_rect;
-                            //NOTE(Ray):GL is from bottom left we are top left converting y cooridinates to match
-                            temp_rect_value.y = current_render_texture.descriptor.height - (temp_rect_value.height + temp_rect_value.y);
-                            //temp_rect_value.height = default_s_rect.height - temp_rect_value.height;
-                            //NOTE(Ray):Not allowed to specify a value outside of the current renderpass width in metal.
-                            int diffw = (int)current_render_texture.descriptor.width - (temp_rect_value.x + temp_rect_value.width);
-                            int diffh = (int)current_render_texture.descriptor.height - (temp_rect_value.y + temp_rect_value.height);
-                            if(diffw < 0)
-                                temp_rect_value.width += diffw;
-                            if(diffh < 0)
-                                temp_rect_value.height += diffh;
+                 else if(command_type == glemu_bufferstate_scissor_rect_change)
+                 {
+                     GLEMUScissorRectCommand* command = Pop(at,GLEMUScissorRectCommand);
+                     ScissorRect temp_rect_value = command->s_rect;
+                     //NOTE(Ray):GL is from bottom left we are top left converting y cooridinates to match
+                     temp_rect_value.y = current_render_texture.descriptor.height - (temp_rect_value.height + temp_rect_value.y);
+                     //temp_rect_value.height = default_s_rect.height - temp_rect_value.height;
+                     //NOTE(Ray):Not allowed to specify a value outside of the current renderpass width in metal.
+                     int diffw = (int)current_render_texture.descriptor.width - (temp_rect_value.x + temp_rect_value.width);
+                     int diffh = (int)current_render_texture.descriptor.height - (temp_rect_value.y + temp_rect_value.height);
+                     if(diffw < 0)
+                         temp_rect_value.width += diffw;
+                     if(diffh < 0)
+                         temp_rect_value.height += diffh;
 
-                            //TODO(Ray):Look for a way to get rid of these checks.
-                            temp_rect_value.x = clamp(temp_rect_value.x,0,current_render_texture.descriptor.width);
-                            temp_rect_value.y = clamp(temp_rect_value.y,0,current_render_texture.descriptor.height);
+                     //TODO(Ray):Look for a way to get rid of these checks.
+                     temp_rect_value.x = clamp(temp_rect_value.x,0,current_render_texture.descriptor.width);
+                     temp_rect_value.y = clamp(temp_rect_value.y,0,current_render_texture.descriptor.height);
 //                            temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width);
 //                            temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height);
-                            temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width - temp_rect_value.x);
-                            temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height - temp_rect_value.y);
+                     temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width - temp_rect_value.x);
+                     temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height - temp_rect_value.y);
 
 //                            PlatformOutput(debug_out_general,"Scissor Rect Change\n");                            
-                            s_rect_value = temp_rect_value;
-                            in_params.s_rect = temp_rect_value;
-                            if(in_params.is_s_rect)
-                            {
-                                RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);                            
-                            }
-                            continue;
-                        }
+                     s_rect_value = temp_rect_value;
+                     in_params.s_rect = temp_rect_value;
+                     if(in_params.is_s_rect)
+                     {
+                         RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);                            
+                     }
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_stencil_enable)
-                        {
-                            GLEMUStencilStateCommand* command = Pop(at,GLEMUStencilStateCommand);
+                 else if(command_type == glemu_bufferstate_stencil_enable)
+                 {
+                     GLEMUStencilStateCommand* command = Pop(at,GLEMUStencilStateCommand);
                             
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
 //                            char* string = "Stencil Enabled:";
@@ -1710,265 +1729,265 @@ namespace OpenGLEmu
 #endif
 //                            RenderDebug::PushDebugGroup(in_params.re,string);
 //                            PlatformOutput(debug_out_general,"Framebuffer_stencil_enable\n");
-                            //NOTE("Must havea  stencil buffer attached here");
-                            //The stencil should be the same size as the render target.
-                            //if not fragments out of the bounds of the stencil surface will get clipped.
+                     //NOTE("Must havea  stencil buffer attached here");
+                     //The stencil should be the same size as the render target.
+                     //if not fragments out of the bounds of the stencil surface will get clipped.
 //Ensure we have a valid sized stencil buffer for the current render texture 
-                            current_depth_desc.backFaceStencil.enabled = true;
-                            current_depth_desc.frontFaceStencil.enabled = true;
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     current_depth_desc.backFaceStencil.enabled = true;
+                     current_depth_desc.frontFaceStencil.enabled = true;
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
 //TODO(Ray):ASSERT AFTER EVERY SET DEPTHSTENCILSTATE TO ENSURE WE GOT A VALID STATE BACKK                            
-                            if(!last_set_pass_desc.stencil_attachment.description.texture.state)
-                            {
+                     if(!last_set_pass_desc.stencil_attachment.description.texture.state)
+                     {
 //                                Assert(current_pass_desc.stencil_attachment.description.texture.state);
-                                //Assert(prev_pass_desc.stencil_attachment.description.texture.state);
-                                //NOTE(Ray):Since we need a valid texture set for the renderpass end encoding and
-                                //start a new encoder with a valid texture set on the render pass descriptor.
-                                RendererCode::SetRenderPassDescriptor(&current_pass_desc);
-                                RenderEncoderCode::EndEncoding(&in_params.re);
+                         //Assert(prev_pass_desc.stencil_attachment.description.texture.state);
+                         //NOTE(Ray):Since we need a valid texture set for the renderpass end encoding and
+                         //start a new encoder with a valid texture set on the render pass descriptor.
+                         RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+                         RenderEncoderCode::EndEncoding(&in_params.re);
 //                                PlatformOutput(debug_out_general,"End Encoding Setting renderpassdesc to have texture\n");
-                                init_params = false;                                                          
-                            }
-                            continue;
-                        }
+                         init_params = false;                                                          
+                     }
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_stencil_disable)
-                        {
-                            GLEMUStencilStateCommand* command = Pop(at,GLEMUStencilStateCommand);
-                            current_depth_desc.frontFaceStencil.enabled = false;
-                            current_depth_desc.backFaceStencil.enabled = false;
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            RenderDebug::PopDebugGroup(in_params.re);
+                 else if(command_type == glemu_bufferstate_stencil_disable)
+                 {
+                     GLEMUStencilStateCommand* command = Pop(at,GLEMUStencilStateCommand);
+                     current_depth_desc.frontFaceStencil.enabled = false;
+                     current_depth_desc.backFaceStencil.enabled = false;
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     RenderDebug::PopDebugGroup(in_params.re);
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
 //                            char* string = "Stencil Disabled:";
 //                            RenderDebug::InsertDebugSignPost(in_params.re,string);
 #endif
-                            continue;
-                        }
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_stencil_mask)
-                        {
-                            GLEMUStencilMaskCommand* command = Pop(at,GLEMUStencilMaskCommand);
-                            current_depth_desc.frontFaceStencil.write_mask = command->write_mask_value;
-                            current_depth_desc.backFaceStencil.write_mask = command->write_mask_value;
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            continue;                            
-                        }
+                 else if(command_type == glemu_bufferstate_stencil_mask)
+                 {
+                     GLEMUStencilMaskCommand* command = Pop(at,GLEMUStencilMaskCommand);
+                     current_depth_desc.frontFaceStencil.write_mask = command->write_mask_value;
+                     current_depth_desc.backFaceStencil.write_mask = command->write_mask_value;
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     continue;                            
+                 }
 
-                        else if(command_type == glemu_bufferstate_stencil_mask_sep)
-                        {
-                            GLEMUStencilMaskSepCommand* command = Pop(at,GLEMUStencilMaskSepCommand);
-                            if(command->front_or_back)
-                            {
-                                current_depth_desc.frontFaceStencil.write_mask = command->write_mask_value;
-                            }
-                            else
-                            {
-                                current_depth_desc.backFaceStencil.write_mask = command->write_mask_value;                                
-                            }
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            continue;                            
-                        }
+                 else if(command_type == glemu_bufferstate_stencil_mask_sep)
+                 {
+                     GLEMUStencilMaskSepCommand* command = Pop(at,GLEMUStencilMaskSepCommand);
+                     if(command->front_or_back)
+                     {
+                         current_depth_desc.frontFaceStencil.write_mask = command->write_mask_value;
+                     }
+                     else
+                     {
+                         current_depth_desc.backFaceStencil.write_mask = command->write_mask_value;                                
+                     }
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     continue;                            
+                 }
 
-                        else if(command_type == glemu_bufferstate_stencil_func)
-                        {
-                            GLEMUStencilFunCommand* command = Pop(at,GLEMUStencilFunCommand);
-                            current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
-                            current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
-                            current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
-                            current_depth_desc.backFaceStencil.read_mask = command->write_mask_value;
-                            RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            continue;
-                        }
+                 else if(command_type == glemu_bufferstate_stencil_func)
+                 {
+                     GLEMUStencilFunCommand* command = Pop(at,GLEMUStencilFunCommand);
+                     current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
+                     current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
+                     current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
+                     current_depth_desc.backFaceStencil.read_mask = command->write_mask_value;
+                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     continue;
+                 }
                         
-                        else if(command_type == glemu_bufferstate_stencil_func_sep)
-                        {
-                            GLEMUStencilFunSepCommand* command = Pop(at,GLEMUStencilFunSepCommand);
-                            if(command->front_or_back)
-                            {
-                                current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
-                                current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
-                            }
-                            else
-                            {
-                                current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
-                                current_depth_desc.backFaceStencil.read_mask = command->write_mask_value;
-                            }
-                            RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            continue;
-                        }
+                 else if(command_type == glemu_bufferstate_stencil_func_sep)
+                 {
+                     GLEMUStencilFunSepCommand* command = Pop(at,GLEMUStencilFunSepCommand);
+                     if(command->front_or_back)
+                     {
+                         current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
+                         current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
+                     }
+                     else
+                     {
+                         current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
+                         current_depth_desc.backFaceStencil.read_mask = command->write_mask_value;
+                     }
+                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_stencil_op)
-                        {
-                            GLEMUStencilOpCommand* command = Pop(at,GLEMUStencilOpCommand);
-                            current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
-                            current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
-                            current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
+                 else if(command_type == glemu_bufferstate_stencil_op)
+                 {
+                     GLEMUStencilOpCommand* command = Pop(at,GLEMUStencilOpCommand);
+                     current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
+                     current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
+                     current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
 
-                            current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
-                            current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
-                            current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            continue;
-                        }
+                     current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
+                     current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
+                     current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     continue;
+                 }
 
-                        else if(command_type == framebuffer_stencil_op_sep)
-                        {
-                            GLEMUStencilOpSepCommand* command = Pop(at,GLEMUStencilOpSepCommand);
-                            if(command->front_or_back)
-                            {
-                                current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
-                                current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
-                                current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
-                            }
-                            else
-                            {
-                                current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
-                                current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
-                                current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;                                
-                            }
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            continue;
-                        }
+                 else if(command_type == framebuffer_stencil_op_sep)
+                 {
+                     GLEMUStencilOpSepCommand* command = Pop(at,GLEMUStencilOpSepCommand);
+                     if(command->front_or_back)
+                     {
+                         current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
+                         current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
+                         current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
+                     }
+                     else
+                     {
+                         current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
+                         current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
+                         current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;                                
+                     }
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_stencil_func_and_op)
-                        {
-                            GLEMUStencilFuncAndOpCommand* command = Pop(at,GLEMUStencilFuncAndOpCommand);
-                            current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
-                            current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
-                            current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
-                            current_depth_desc.backFaceStencil.read_mask = command->write_mask_value;
-                            RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
-                            current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
-                            current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
-                            current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
+                 else if(command_type == glemu_bufferstate_stencil_func_and_op)
+                 {
+                     GLEMUStencilFuncAndOpCommand* command = Pop(at,GLEMUStencilFuncAndOpCommand);
+                     current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
+                     current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
+                     current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
+                     current_depth_desc.backFaceStencil.read_mask = command->write_mask_value;
+                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
+                     current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
+                     current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
+                     current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
 
-                            current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
-                            current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
-                            current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
+                     current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
+                     current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
+                     current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
 
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            continue;
-                        }
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     continue;
+                 }
 
-                        else if(command_type == glemu_bufferstate_stencil_func_and_op_sep)
-                        {
-                            GLEMUStencilFuncAndOpSepCommand* command = Pop(at,GLEMUStencilFuncAndOpSepCommand);
-                            if(command->front_or_back)
-                            {
-                                current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
-                                current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
-                                current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
-                                current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
-                                current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
-                            }
-                            else
-                            {
-                                current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
-                                current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
-                                current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;                                
-                                current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
-                                current_depth_desc.backFaceStencil.read_mask = command->write_mask_value;
-                            }
-                            RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
-                            DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
-                            RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
-                            continue;
-                        }
+                 else if(command_type == glemu_bufferstate_stencil_func_and_op_sep)
+                 {
+                     GLEMUStencilFuncAndOpSepCommand* command = Pop(at,GLEMUStencilFuncAndOpSepCommand);
+                     if(command->front_or_back)
+                     {
+                         current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
+                         current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
+                         current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
+                         current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
+                         current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
+                     }
+                     else
+                     {
+                         current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
+                         current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
+                         current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;                                
+                         current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
+                         current_depth_desc.backFaceStencil.read_mask = command->write_mask_value;
+                     }
+                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
+                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                     continue;
+                 }
                         
-                        else if(command_type == glemu_bufferstate_draw_arrays)
-                        {
-                            GLEMUDrawArraysCommand* command = Pop(at,GLEMUDrawArraysCommand);
-                            //None means a draw attempt here we check bindings if there are any and set up the data
-                            //binding for the gpu along with sending any data to the gpu that needs sent.
-                            //TODO(Ray):Later once this is working switch form buffer 3 to 2 and remove the three buffer
-                            //and other uniforms setting in the uniform matrix excute callback.
-                            //TODO(Ray):make sure we can actually use the same buffer index for the gpu set bytes here.
-                            //TODO(Ray):Verifiy that draw index and for loop index i actually
-                            UniformBindingTableEntry uni_entry = GetUniEntryForDrawCall(command->uniform_table_index);
-                            if(uni_entry.v_size > 0)
-                            {
-                                RenderEncoderCode::SetVertexBytes(&in_params.re,uni_entry.v_data,uni_entry.v_size,4);
+                 else if(command_type == glemu_bufferstate_draw_arrays)
+                 {
+                     GLEMUDrawArraysCommand* command = Pop(at,GLEMUDrawArraysCommand);
+                     //None means a draw attempt here we check bindings if there are any and set up the data
+                     //binding for the gpu along with sending any data to the gpu that needs sent.
+                     //TODO(Ray):Later once this is working switch form buffer 3 to 2 and remove the three buffer
+                     //and other uniforms setting in the uniform matrix excute callback.
+                     //TODO(Ray):make sure we can actually use the same buffer index for the gpu set bytes here.
+                     //TODO(Ray):Verifiy that draw index and for loop index i actually
+                     UniformBindingTableEntry uni_entry = GetUniEntryForDrawCall(command->uniform_table_index);
+                     if(uni_entry.v_size > 0)
+                     {
+                         RenderEncoderCode::SetVertexBytes(&in_params.re,uni_entry.v_data,uni_entry.v_size,4);
 //                                PlatformOutput(debug_out_uniforms,"UniformBinding table entry : v_size :%d :  buffer index %d \n",uni_entry.v_size,4);
-                            }
-                            if(uni_entry.f_size > 0)
-                            {
-                                RenderEncoderCode::SetFragmentBytes(&in_params.re,uni_entry.f_data,uni_entry.f_size,4);
+                     }
+                     if(uni_entry.f_size > 0)
+                     {
+                         RenderEncoderCode::SetFragmentBytes(&in_params.re,uni_entry.f_data,uni_entry.f_size,4);
 //                                PlatformOutput(debug_out_uniforms,"UnidformBinding table entry : f_size :%d : buffer index %d \n",uni_entry.f_size,4);
-                            }
+                     }
                             
 //TExture bindings here
 //for ever texture bind at texture index
-                            //TODO(Ray):Allow for texture bindings on the vertex shader and compute functions.
-                            float2 t_buffer_range = command->texture_buffer_range;
-                            for(int i = t_buffer_range.x();i < t_buffer_range.y();++i)
-                            {
-                                FragmentShaderTextureBindingTableEntry* entry = YoyoGetVectorElement(FragmentShaderTextureBindingTableEntry,&currently_bound_frag_textures,i);
-                                Assert(entry);
-                                Assert(entry->texture.texture.state);
-                                Assert(entry->texture.sampler.state);
-                                GLTexture final_tex = entry->texture;
+                     //TODO(Ray):Allow for texture bindings on the vertex shader and compute functions.
+                     float2 t_buffer_range = command->texture_buffer_range;
+                     for(int i = t_buffer_range.x();i < t_buffer_range.y();++i)
+                     {
+                         FragmentShaderTextureBindingTableEntry* entry = YoyoGetVectorElement(FragmentShaderTextureBindingTableEntry,&currently_bound_frag_textures,i);
+                         Assert(entry);
+                         Assert(entry->texture.texture.state);
+                         Assert(entry->texture.sampler.state);
+                         GLTexture final_tex = entry->texture;
 
-                                BeginTicketMutex(&texture_mutex);                                
-                                if(GLIsValidTexture(final_tex))
-                                {
+                         BeginTicketMutex(&texture_mutex);                                
+                         if(GLIsValidTexture(final_tex))
+                         {
 //                                    PlatformOutput(debug_out_high,"Attempt To bind invalid texture Invalid texture  \n");
-                                }
-                                else
-                                {
-                                    final_tex = default_texture;
-                                }
-                                EndTicketMutex(&texture_mutex);
+                         }
+                         else
+                         {
+                             final_tex = default_texture;
+                         }
+                         EndTicketMutex(&texture_mutex);
 
-                                Assert(!final_tex.texture.is_released);
-                                RenderEncoderCode::SetFragmentTexture(&in_params.re,&final_tex.texture,entry->tex_index);
-                                //TODO(Ray):Allow for mutliple sampler bindings or perhaps none and use shader defined ones
-                                //for now all textures use the sampler index 0 and they must have one defined.
-                                //In other words a GLTexture at teh moment means you have a sampler with you by default.
-                                RenderEncoderCode::SetFragmentSamplerState(&in_params.re,&final_tex.sampler,entry->sampler_index);
+                         Assert(!final_tex.texture.is_released);
+                         RenderEncoderCode::SetFragmentTexture(&in_params.re,&final_tex.texture,entry->tex_index);
+                         //TODO(Ray):Allow for mutliple sampler bindings or perhaps none and use shader defined ones
+                         //for now all textures use the sampler index 0 and they must have one defined.
+                         //In other words a GLTexture at teh moment means you have a sampler with you by default.
+                         RenderEncoderCode::SetFragmentSamplerState(&in_params.re,&final_tex.sampler,entry->sampler_index);
 //                                PlatformOutput(debug_out_high,"texture binding entry : index:%d : range index %d \n",entry->tex_index,i);
 //                                PlatformOutput(debug_out_high,"sampler binding entry : index:%d : range index %d \n",entry->sampler_index,i);
-                            }
+                     }
 
-                            //TODO(Ray):For every vertex or fragment texture binding add a binding if there is no
-                            //binding for the shader at that index we should know right away we would need some introspection into the shader/
-                            //at that point but we dont have that yet for current projects its not an issue.
+                     //TODO(Ray):For every vertex or fragment texture binding add a binding if there is no
+                     //binding for the shader at that index we should know right away we would need some introspection into the shader/
+                     //at that point but we dont have that yet for current projects its not an issue.
 
-                            //Buffer bindings
-                            //TODO(Ray):Allow for buffer bindings on the fragment and compute function
-                            float2 buffer_range = command->buffer_range;
-                            for(int i = buffer_range.x();i < buffer_range.y();++i)
-                            {
-                                BufferBindingTableEntry* entry = YoyoGetVectorElement(BufferBindingTableEntry,&currently_bound_buffers,i);
-                                RenderEncoderCode::SetVertexBuffer(&in_params.re,&entry->buffer,entry->offset,entry->index);
+                     //Buffer bindings
+                     //TODO(Ray):Allow for buffer bindings on the fragment and compute function
+                     float2 buffer_range = command->buffer_range;
+                     for(int i = buffer_range.x();i < buffer_range.y();++i)
+                     {
+                         BufferBindingTableEntry* entry = YoyoGetVectorElement(BufferBindingTableEntry,&currently_bound_buffers,i);
+                         RenderEncoderCode::SetVertexBuffer(&in_params.re,&entry->buffer,entry->offset,entry->index);
 //                                PlatformOutput(debug_out_high,"buffer binding entry : index:%d : offset %d : range index %d \n",entry->index,entry->offset,i);
-                            }
+                     }
 
-                            PlatformOutput(true, "GLEMU DrawingPrimitive.\n");
-                            RenderCommandEncoder re = in_params.re;
+                     PlatformOutput(true, "GLEMU DrawingPrimitive.\n");
+                     RenderCommandEncoder re = in_params.re;
 
-                            uint32_t bi = current_buffer_index;
- 
-                            uint32_t current_count = command->current_count;
-//                            if(current_count > 0)
-                            {
-                                GPUBuffer vertexbuffer = in_params.vertexbuffer->buffer[bi];
-                                RenderEncoderCode::DrawPrimitives(&re, command->topology, 0, (current_count));
-                            }
-                        }
-                    }
-                }//end switch
+                     uint32_t bi = current_buffer_index;
+                     uint32_t current_count = command->current_count;
+
+                     GPUBuffer vertexbuffer = in_params.vertexbuffer->buffer[bi];
+                     RenderEncoderCode::DrawPrimitives(&re, command->topology, 0, (current_count));
+                 }
+                 else
+                 {
+                     int a = 0;
+                    // Assert(false);
+                 }
             }
             
             RenderEncoderCode::AddCompletedHandler(c_buffer,[](void* arg)
@@ -1996,8 +2015,6 @@ namespace OpenGLEmu
         PlatformOutput(true, "DepthStencilState count: %d\n",depth_stencil_state_count);
         PlatformOutput(true, "RenderEncoder count: %d\n",render_encoder_count);
         PlatformOutput(true, "Draw count: %d\n",draw_index);
-//        CaptureManager cm = RenderDebug::GetSharedCaptureManager();
-//        RenderDebug::StopCapture(cm);
     }
 };
 
