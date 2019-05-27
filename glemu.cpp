@@ -164,8 +164,8 @@ namespace OpenGLEmu
         sprite_rp_ca_desc.clear_color = float4(0.392f,0.584f,0.929f,1);//corflower blue of course
         sprite_rp_ca_desc.description.loadAction = LoadActionLoad;
         sprite_rp_ca_desc.description.storeAction = StoreActionStore;
-        RenderEncoderCode::AddRenderPassColorAttachment(&sp_rp_desc,&sprite_rp_ca_desc);
-        RenderEncoderCode::SetRenderPassColorAttachmentDescriptor(&sp_rp_desc,0);
+        //RenderEncoderCode::AddRenderPassColorAttachment(&sp_rp_desc,&sprite_rp_ca_desc);
+        //RenderEncoderCode::SetRenderPassColorAttachmentDescriptor(&sp_rp_desc,0);
         
 //        RenderPass* sb_subpass = RenderPassCode::AddRenderPass(&sb_pass_buffer, no_of_sprite_pass, sizeofc,0,&sp_rp_desc);
         default_render_pass_descriptor = sp_rp_desc;
@@ -178,14 +178,14 @@ namespace OpenGLEmu
         {
             uint32_t size = (uint32_t)buffer_size;
             buffer[i] = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
-            Assert(buffer[i].buffer);
+            //Assert(buffer[i].buffer);
             arena[i] = AllocatePartition(size,buffer[i].data);
 
             //NOTE(RAY):Same of max sprites for this sprite batch perhaps we should just take and set the max number of sprites
             //to be used per batch or capacity as another way to put it.
             uint32_t atlas_index_buffer_size = (size / SIZE_OF_SPRITE_IN_BYTES) * sizeof(uint32_t);
             atlas_index_buffer[i] = RenderGPUMemory::NewBufferWithLength(atlas_index_buffer_size,ResourceStorageModeShared);
-            Assert(atlas_index_buffer[i].buffer);
+            //Assert(atlas_index_buffer[i].buffer);
             atlas_index_arena[i] = AllocatePartition(atlas_index_buffer_size,atlas_index_buffer[i].data);
             matrix_variable_size_arena[i] = AllocatePartition(atlas_index_buffer_size,matrix_variable_size_buffer[i].data);
         }
@@ -193,7 +193,7 @@ namespace OpenGLEmu
         {
             uint32_t size = (uint32_t)buffer_size;
             matrix_buffer = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
-            Assert(matrix_buffer.buffer);
+            //Assert(matrix_buffer.buffer);
             matrix_buffer_arena = AllocatePartition(size,matrix_buffer.data);
         }
         
@@ -440,7 +440,7 @@ namespace OpenGLEmu
             AnythingRenderSamplerStateCache::AddSamplerState(&desc,&new_sampler_state);
             result = AnythingRenderSamplerStateCache::GetSamplerState(&desc);
         }
-        Assert(result);
+        //Assert(result);
         return (*result);                
     }
 
@@ -521,7 +521,7 @@ namespace OpenGLEmu
         {
             uint32_t size = (uint32_t)default_buffer_size;
             buffer.buffer[i] = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
-            Assert(buffer.buffer[i].buffer);
+            //Assert(buffer.buffer[i].buffer);
             buffer.arena[i] = AllocatePartition(size,buffer.buffer[i].data);
         }
         uint64_t tt = bindkey;
@@ -1401,12 +1401,10 @@ namespace OpenGLEmu
         EndDraw(unit_size);
     }
     
-#define Pop(ptr,type) (type*)Pop_(ptr,sizeof(type));
-    static inline void*  Pop_(void** ptr,uint32_t size)
+#define Pop(ptr,type) (type*)Pop_(ptr,sizeof(type));ptr = (uint8_t*)ptr + (sizeof(type));
+    static inline void*  Pop_(void* ptr,uint32_t size)
     {
-        void* result = (*ptr);
-        (*(uint8_t*)ptr) += (size);
-        return result;
+        return ptr;
     }
     
     void Execute()
@@ -1426,7 +1424,7 @@ namespace OpenGLEmu
 
         uint32_t render_encoder_count = 0;
         float4 current_clear_color = float4(0.0f);
-
+		current_drawable.state = (void*)1;
         if(current_drawable.state)
         {
             //SpriteBatchBuffer* sbb = nullptr;//&sb_buffer;
@@ -1540,7 +1538,7 @@ namespace OpenGLEmu
                         
                         if(command_type == glemu_bufferstate_start)
                         {
-                            GLEMUFramebufferStart* command = Pop(&at,GLEMUFramebufferStart);//(GLEMUFramebufferStart)at;
+                            GLEMUFramebufferStart* command = Pop(at,GLEMUFramebufferStart);//(GLEMUFramebufferStart)at;
                             if(command->texture.state != current_render_texture.state)
                             {
                                 render_texture = command->texture;
@@ -1571,7 +1569,7 @@ namespace OpenGLEmu
                     
                         else if(command_type == glemu_bufferstate_end)
                         {
-                            GLEMUFramebufferEnd* command = Pop(&at,GLEMUFramebufferEnd);
+                            GLEMUFramebufferEnd* command = Pop(at,GLEMUFramebufferEnd);
                             if(current_drawable.state != current_render_texture.state)
                             {
                                 Assert(prev_pass_desc.stencil_attachment.description.texture.state);
@@ -1587,13 +1585,14 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_clear_start)
                         {
-                            GLEMUClearBufferCommand* command = Pop(&at,GLEMUClearBufferCommand);                            
+                            GLEMUClearBufferCommand* command = Pop(at,GLEMUClearBufferCommand);                            
 //Get buffer bits and than set the attachments to the state needed.
                             //Than after the clear set them back to defaults
                             if(command->write_mask_value & (1 << 1))
                             {
                                  //color pass clear
                                 RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
+								if (!ca)continue;
                                 ca->description.loadAction = LoadActionClear;
                                 ca->clear_color = current_clear_color;
                             }
@@ -1617,10 +1616,11 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_clear_end)
                         {
-                            GLEMUClearBufferCommand* command = Pop(&at,GLEMUClearBufferCommand);
+                            GLEMUClearBufferCommand* command = Pop(at,GLEMUClearBufferCommand);
 
 //for the time being we are always in load to better emulate what opengl does.
                             RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
+							if (!ca)continue;
                             ca->description.loadAction = LoadActionLoad;
                             current_pass_desc.depth_attachment.description.loadAction = LoadActionLoad;                                
                             current_pass_desc.stencil_attachment.description.loadAction = LoadActionLoad;
@@ -1632,27 +1632,27 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_clear_stencil_value)
                         {
-                            GLEMUClearStencilCommand* command = Pop(&at,GLEMUClearStencilCommand);
+                            GLEMUClearStencilCommand* command = Pop(at,GLEMUClearStencilCommand);
                             continue;
                         }
 
                         else if(command_type == glemu_bufferstate_clear_color_value)
                         {
-                            GLEMUClearColorCommand* command = Pop(&at,GLEMUClearColorCommand);                            
+                            GLEMUClearColorCommand* command = Pop(at,GLEMUClearColorCommand);                            
                             current_clear_color = command->clear_color;
                             continue;
                         }
 
                         else if(command_type == glemu_bufferstate_clear_color_and_stencil_value)
                         {
-                            GLEMUClearColorAndStencilCommand* command = Pop(&at,GLEMUClearColorAndStencilCommand);
+                            GLEMUClearColorAndStencilCommand* command = Pop(at,GLEMUClearColorAndStencilCommand);
                             current_clear_color = command->clear_color;
                             continue;
                         }
         
                         else if(command_type == glemu_bufferstate_viewport_change)
                         {
-                            GLEMUViewportChangeCommand* command = Pop(&at,GLEMUViewportChangeCommand);
+                            GLEMUViewportChangeCommand* command = Pop(at,GLEMUViewportChangeCommand);
                             //TODO(Ray):We need to add some checks here to keep viewport in surface bounds.
                             in_params.viewport = command->viewport;
                             float4 vp = in_params.viewport;
@@ -1662,7 +1662,7 @@ namespace OpenGLEmu
                         
                         else if(command_type == glemu_bufferstate_blend_change)
                         {
-                            GLEMUBlendCommand* command = Pop(&at,GLEMUBlendCommand);
+                            GLEMUBlendCommand* command = Pop(at,GLEMUBlendCommand);
                             BlendFactor source = command->sourceRGBBlendFactor;
                             BlendFactor dest = command->destinationRGBBlendFactor;
                             //NOTE(Ray):If we actually were trying to write an opengl Emulator full on we would need to test every single attachment descriptor
@@ -1695,7 +1695,7 @@ namespace OpenGLEmu
                        
                         else if(command_type == glemu_bufferstate_shader_program_change)
                         {
-                            GLEMUUseProgramCommand* command = Pop(&at,GLEMUUseProgramCommand);
+                            GLEMUUseProgramCommand* command = Pop(at,GLEMUUseProgramCommand);
 //                            if(sbb->gl_program.id != current_program.id)
                             {
                                 GLProgram new_program = command->program;
@@ -1707,12 +1707,12 @@ namespace OpenGLEmu
                                 
                                 RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
 
-                                Assert(next_pso.desc.depthAttachmentPixelFormat == pd.depthAttachmentPixelFormat);
-                                Assert(next_pso.desc.stencilAttachmentPixelFormat == pd.stencilAttachmentPixelFormat);
-                                Assert(next_pso.desc.fragment_function);
-                                Assert(next_pso.desc.sample_count == 1);
-                                Assert(next_pso.desc.vertex_function);
-                                Assert(next_pso.state);
+                                //Assert(next_pso.desc.depthAttachmentPixelFormat == pd.depthAttachmentPixelFormat);
+                                //Assert(next_pso.desc.stencilAttachmentPixelFormat == pd.stencilAttachmentPixelFormat);
+                                //Assert(next_pso.desc.fragment_function);
+                               // Assert(next_pso.desc.sample_count == 1);
+                                //Assert(next_pso.desc.vertex_function);
+                                //Assert(next_pso.state);
                                 
 //                                PlatformOutput(debug_out_general,"Framebuffer_shader_program_change::New Pipeline State\n");
                                 current_program = new_program;
@@ -1724,7 +1724,7 @@ namespace OpenGLEmu
                     
                         else if(command_type == glemu_bufferstate_scissor_test_enable)
                         {
-                            GLEMUScissorTestCommand* command = Pop(&at,GLEMUScissorTestCommand);
+                            GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
                             in_params.is_s_rect = true;
                             RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
                             continue;
@@ -1732,7 +1732,7 @@ namespace OpenGLEmu
                         
                         else if(command_type == glemu_bufferstate_scissor_test_disable)
                         {
-                            GLEMUScissorTestCommand* command = Pop(&at,GLEMUScissorTestCommand);
+                            GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
                             in_params.is_s_rect = false;
                             ScissorRect new_s_rect;
                             new_s_rect.width = current_render_texture.descriptor.width;
@@ -1746,7 +1746,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_scissor_rect_change)
                         {
-                            GLEMUScissorRectCommand* command = Pop(&at,GLEMUScissorRectCommand);
+                            GLEMUScissorRectCommand* command = Pop(at,GLEMUScissorRectCommand);
                             ScissorRect temp_rect_value = command->s_rect;
                             //NOTE(Ray):GL is from bottom left we are top left converting y cooridinates to match
                             temp_rect_value.y = current_render_texture.descriptor.height - (temp_rect_value.height + temp_rect_value.y);
@@ -1779,7 +1779,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_stencil_enable)
                         {
-                            GLEMUStencilStateCommand* command = Pop(&at,GLEMUStencilStateCommand);
+                            GLEMUStencilStateCommand* command = Pop(at,GLEMUStencilStateCommand);
                             
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
 //                            char* string = "Stencil Enabled:";
@@ -1812,7 +1812,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_stencil_disable)
                         {
-                            GLEMUStencilStateCommand* command = Pop(&at,GLEMUStencilStateCommand);
+                            GLEMUStencilStateCommand* command = Pop(at,GLEMUStencilStateCommand);
                             current_depth_desc.frontFaceStencil.enabled = false;
                             current_depth_desc.backFaceStencil.enabled = false;
                             DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
@@ -1827,7 +1827,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_stencil_mask)
                         {
-                            GLEMUStencilMaskCommand* command = Pop(&at,GLEMUStencilMaskCommand);
+                            GLEMUStencilMaskCommand* command = Pop(at,GLEMUStencilMaskCommand);
                             current_depth_desc.frontFaceStencil.write_mask = command->write_mask_value;
                             current_depth_desc.backFaceStencil.write_mask = command->write_mask_value;
                             DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
@@ -1837,7 +1837,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_stencil_mask_sep)
                         {
-                            GLEMUStencilMaskSepCommand* command = Pop(&at,GLEMUStencilMaskSepCommand);
+                            GLEMUStencilMaskSepCommand* command = Pop(at,GLEMUStencilMaskSepCommand);
                             if(command->front_or_back)
                             {
                                 current_depth_desc.frontFaceStencil.write_mask = command->write_mask_value;
@@ -1853,7 +1853,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_stencil_func)
                         {
-                            GLEMUStencilFunCommand* command = Pop(&at,GLEMUStencilFunCommand);
+                            GLEMUStencilFunCommand* command = Pop(at,GLEMUStencilFunCommand);
                             current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
                             current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
                             current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
@@ -1866,7 +1866,7 @@ namespace OpenGLEmu
                         
                         else if(command_type == glemu_bufferstate_stencil_func_sep)
                         {
-                            GLEMUStencilFunSepCommand* command = Pop(&at,GLEMUStencilFunSepCommand);
+                            GLEMUStencilFunSepCommand* command = Pop(at,GLEMUStencilFunSepCommand);
                             if(command->front_or_back)
                             {
                                 current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
@@ -1885,7 +1885,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_stencil_op)
                         {
-                            GLEMUStencilOpCommand* command = Pop(&at,GLEMUStencilOpCommand);
+                            GLEMUStencilOpCommand* command = Pop(at,GLEMUStencilOpCommand);
                             current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
                             current_depth_desc.frontFaceStencil.depthFailureOperation = command->depth_fail_op;
                             current_depth_desc.frontFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
@@ -1900,7 +1900,7 @@ namespace OpenGLEmu
 
                         else if(command_type == framebuffer_stencil_op_sep)
                         {
-                            GLEMUStencilOpSepCommand* command = Pop(&at,GLEMUStencilOpSepCommand);
+                            GLEMUStencilOpSepCommand* command = Pop(at,GLEMUStencilOpSepCommand);
                             if(command->front_or_back)
                             {
                                 current_depth_desc.frontFaceStencil.stencilFailureOperation = command->stencil_fail_op;
@@ -1920,7 +1920,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_stencil_func_and_op)
                         {
-                            GLEMUStencilFuncAndOpCommand* command = Pop(&at,GLEMUStencilFuncAndOpCommand);
+                            GLEMUStencilFuncAndOpCommand* command = Pop(at,GLEMUStencilFuncAndOpCommand);
                             current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
                             current_depth_desc.frontFaceStencil.read_mask = command->write_mask_value;
                             current_depth_desc.backFaceStencil.stencilCompareFunction = command->compareFunction;
@@ -1941,7 +1941,7 @@ namespace OpenGLEmu
 
                         else if(command_type == glemu_bufferstate_stencil_func_and_op_sep)
                         {
-                            GLEMUStencilFuncAndOpSepCommand* command = Pop(&at,GLEMUStencilFuncAndOpSepCommand);
+                            GLEMUStencilFuncAndOpSepCommand* command = Pop(at,GLEMUStencilFuncAndOpSepCommand);
                             if(command->front_or_back)
                             {
                                 current_depth_desc.frontFaceStencil.stencilCompareFunction = command->compareFunction;
@@ -1966,7 +1966,7 @@ namespace OpenGLEmu
                         
                         else if(command_type == glemu_bufferstate_draw_arrays)
                         {
-                            GLEMUDrawArraysCommand* command = Pop(&at,GLEMUDrawArraysCommand);
+                            GLEMUDrawArraysCommand* command = Pop(at,GLEMUDrawArraysCommand);
                             //None means a draw attempt here we check bindings if there are any and set up the data
                             //binding for the gpu along with sending any data to the gpu that needs sent.
                             //TODO(Ray):Later once this is working switch form buffer 3 to 2 and remove the three buffer
@@ -2079,8 +2079,8 @@ namespace OpenGLEmu
                 
             //Tell the gpu to present the drawable that we wrote to
             //Drawable current_drawable = RenderEncoderCode::GetDefaultDrawableFromView();
-            RenderEncoderCode::PresentDrawable(c_buffer,current_drawable.state);
-            RenderEncoderCode::Commit(c_buffer);
+            //RenderEncoderCode::PresentDrawable(c_buffer,current_drawable.state);
+            //RenderEncoderCode::Commit(c_buffer);
             command_list.count = 0;
             prev_frame_pipeline_state = in_params.pipeline_state;
         }
