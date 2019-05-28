@@ -197,14 +197,14 @@ namespace OpenGLEmu
         {
             uint32_t size = (uint32_t)buffer_size;
             buffer[i] = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
-            Assert(buffer[i].buffer);
+            //Assert(buffer[i].buffer);
             arena[i] = AllocatePartition(size,buffer[i].data);
 
             //NOTE(RAY):Same of max sprites for this sprite batch perhaps we should just take and set the max number of sprites
             //to be used per batch or capacity as another way to put it.
             uint32_t atlas_index_buffer_size = (size / SIZE_OF_SPRITE_IN_BYTES) * sizeof(uint32_t);
             atlas_index_buffer[i] = RenderGPUMemory::NewBufferWithLength(atlas_index_buffer_size,ResourceStorageModeShared);
-            Assert(atlas_index_buffer[i].buffer);
+            //Assert(atlas_index_buffer[i].buffer);
             atlas_index_arena[i] = AllocatePartition(atlas_index_buffer_size,atlas_index_buffer[i].data);
 //            matrix_variable_size_arena[i] = AllocatePartition(atlas_index_buffer_size,matrix_variable_size_buffer[i].data);
         }
@@ -430,7 +430,7 @@ namespace OpenGLEmu
             AnythingRenderSamplerStateCache::AddSamplerState(&desc,&new_sampler_state);
             result = AnythingRenderSamplerStateCache::GetSamplerState(&desc);
         }
-        Assert(result);
+        //Assert(result);
         return (*result);                
     }
 
@@ -509,7 +509,7 @@ namespace OpenGLEmu
         {
             uint32_t size = (uint32_t)default_buffer_size;
             buffer.buffer[i] = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
-            Assert(buffer.buffer[i].buffer);
+            //Assert(buffer.buffer[i].buffer);
             buffer.arena[i] = AllocatePartition(size,buffer.buffer[i].data);
         }
         uint64_t tt = bindkey;
@@ -1335,7 +1335,7 @@ namespace OpenGLEmu
 
         uint32_t render_encoder_count = 0;
         float4 current_clear_color = float4(0.0f);
-
+		current_drawable.state = (void*)1;
         if(current_drawable.state)
         {
             //Set default in_params for passes
