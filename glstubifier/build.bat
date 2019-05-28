@@ -15,6 +15,6 @@ echo WAITING FOR PDB > lock.tmp
 
 del lock.tmp
 
-cl %CommonCompilerFlags%  ../glstubify.cpp   -Fmglstubify.map /link -incremental:no -opt:ref -PDB:glstubify.pdb %CommonLinkerFlags%
+cl %CommonCompilerFlags%  ../glstubify.cpp    -Fmglstubify.map /link -incremental:no -opt:ref -PDB:glstubify.pdb %CommonLinkerFlags%
 
 popd
