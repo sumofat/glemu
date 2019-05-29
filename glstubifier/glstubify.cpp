@@ -90,20 +90,38 @@ GLHeaderData ParseGLHeader(MemoryArena* arena,char* text_string)
     return result;
 }
 
+//1. Parse and append any unknown tokens with whitespace
+//
+//2. When we hit a token with "GL_API" token and than ";" semi colon store that.
+//3. Insert braces 
+//4. Further recurse down and find the return parameter.
+//5. Add function body and return parameter to the string.
+//6. We might need to parse the function parameters in the case of functions that return something in the parameters.
+//7. In that case we can use a switch to zero that out.
+//8. All vars will be a zero return for now.
+
 void main()
 {
     PlatformOutput(true,"------------BEGIN GLSTUBIFY------------\n");
-    
     StringsHandler::Init();
+    MemoryArena s = StringsHandler::string_memory;
+    MemoryArena sm = StringsHandler::transient_string_memory;
     uint32_t length = 0;
     uint32_t lengthext = 0;
-    
     Yostr gl_h_output = {};
     Yostr gl_h_ext_output = {};
+    
+    gl_h_output.String = (char*)sm.base;
+    gl_h_ext_output.String = "";
+    gl_h_ext_output.Length = 0;
+    //
     read_file_result gl_h_file = PlatformReadEntireFile("gl.h");
     read_file_result gl_h_ext_file = PlatformReadEntireFile("glext.h");
     
-    GLHeaderData header_data = ParseGLHeader(&StringsHandler::transient_string_memory,(char*)gl_h_file.Content);
+    GLHeaderData header_data = ParseGLHeader(&StringsHandler::string_memory,(char*)gl_h_file.Content);
+    
+    //We set the maximum size of the file which we should not be going over as a subset of that.
+    MemoryArena final_out = PlatformAllocatePartition(gl_h_file.ContentSize); 
     
     for(int i = 0;i < header_data.header_data_block.count;++i)
     {
@@ -111,39 +129,35 @@ void main()
         for(int j = 0;j < block->tokens.count;++j)
         {
             Token* t = (Token*)block->tokens.base + j;
-            
             if(t->Type == Token_OpenParen)
             {
+                AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral("(",&s),&sm);
                 PlatformOutput(true,"(",t->Data.String);
             }
             else if(t->Type == Token_CloseParen)
             {
+                AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral(")",&s),&sm);
                 PlatformOutput(true,")",t->Data.String);
             }
             else if(t->Type == Token_SemiColon)
             {
+                AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral("\n",&s),&sm);
                 PlatformOutput(true,";\n");
             }
             else if(t->Type == Token_Comma)
             {
+                AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral(",",&s),&sm);
                 PlatformOutput(true,",");
             }
             else if(t->Type == Token_Identifier)
             {
+                AppendStringSameFrontArena(&gl_h_output,t->Data,&sm);
                 PlatformOutput(true,"%s ",t->Data.String);
             }
         }
     }
     
-    //1. Parse and append any unknown tokens with whitespace
-    //
-    //2. When we hit a token with "GL_API" token and than ";" semi colon store that.
-    //3. Insert braces 
-    //4. Further recurse down and find the return parameter.
-    //5. Add function body and return parameter to the string.
-    //6. We might need to parse the function parameters in the case of functions that return something in the parameters.
-    //7. In that case we can use a switch to zero that out.
-    //8. All vars will be a zero return for now.
+    PlatformOutput(true,"FinalOut: %s\n",gl_h_output.String);
     
     //Output stubbed gl.h
     char* output = "";
@@ -155,7 +169,7 @@ void main()
     final_filename.NullTerminated = true;
     char* dir = "";
     PlatformFilePointer file{};
-    Yostr final_output_path = AppendStringToChar(dir,final_filename,&StringsHandler::transient_string_memory);
+    Yostr final_output_path = AppendStringToChar(dir,final_filename,&sm);
     PlatformWriteMemoryToFile(&file,final_output_path.String,(void*)output,length,true,"w+");
     
     //Output stubbed glext.h
@@ -169,7 +183,7 @@ void main()
     char* dirext = "";
     
     PlatformFilePointer file_ext{};
-    Yostr final_output_path_ext = AppendStringToChar(dirext,final_filename_ext,&StringsHandler::transient_string_memory);
+    Yostr final_output_path_ext = AppendStringToChar(dirext,final_filename_ext,&sm);
     PlatformWriteMemoryToFile(&file_ext,final_output_path_ext.String,(void*)output_ext,lengthext,true,"w+");
     
     PlatformOutput(true,"------------END GLSTUBIFY------------\n");
