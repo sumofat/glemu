@@ -90,6 +90,33 @@ GLHeaderData ParseGLHeader(MemoryArena* arena,char* text_string)
     return result;
 }
 
+enum GLStubifyReturnTypes
+{
+    gl_returntype_void,
+    gl_returntype_uint
+};
+
+Yostr GetReturnString(GLStubifyReturnTypes type,MemoryArena* arena)
+{
+    Yostr result = {};
+    switch(type)
+    {
+        case gl_returntype_void:
+        {
+            result = CreateStringFromLiteral("return;\n",arena);
+        }break;
+        case gl_returntype_uint:
+        {
+            result = CreateStringFromLiteral("return 0;\n",arena);
+        }break;
+        default:
+        {
+            Assert(false);
+        }
+    }
+    return result;
+}
+
 //1. Parse and append any unknown tokens with whitespace
 //
 //2. When we hit a token with "GL_API" token and than ";" semi colon store that.
@@ -99,7 +126,8 @@ GLHeaderData ParseGLHeader(MemoryArena* arena,char* text_string)
 //6. We might need to parse the function parameters in the case of functions that return something in the parameters.
 //7. In that case we can use a switch to zero that out.
 //8. All vars will be a zero return for now.
-
+// TODO(Ray Garner): Handle const case and add some more resturn types.
+//
 void main()
 {
     PlatformOutput(true,"------------BEGIN GLSTUBIFY------------\n");
@@ -121,8 +149,11 @@ void main()
     GLHeaderData header_data = ParseGLHeader(&StringsHandler::string_memory,(char*)gl_h_file.Content);
     
     //We set the maximum size of the file which we should not be going over as a subset of that.
-    MemoryArena final_out = PlatformAllocatePartition(gl_h_file.ContentSize); 
+    MemoryArena final_out = PlatformAllocatePartition(gl_h_file.ContentSize);
+    MemoryArena func_sig_temp_arena = PlatformAllocatePartition(KiloBytes(2));
     
+    Token prev_token = {};
+    Token return_type_token = {};
     for(int i = 0;i < header_data.header_data_block.count;++i)
     {
         GLHeaderDataBlock* block = (GLHeaderDataBlock*)header_data.header_data_block.base + i;
@@ -134,26 +165,51 @@ void main()
                 AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral("(",&s),&sm);
                 PlatformOutput(true,"(",t->Data.String);
             }
+            
             else if(t->Type == Token_CloseParen)
             {
                 AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral(")",&s),&sm);
                 PlatformOutput(true,")",t->Data.String);
             }
+            
             else if(t->Type == Token_SemiColon)
             {
-                AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral("\n",&s),&sm);
+                // NOTE(Ray Garner): This is the end of the signature
+                //we throw away the semicolon and add create our braces
+                //and return type here.
+                Yostr func_stub = CreateStringFromLiteral("{\n",&func_sig_temp_arena);
+                GLStubifyReturnTypes return_type = {};
+                if(CompareStringtoChar(return_type_token.Data,"void"))
+                {
+                    return_type = gl_returntype_void;
+                }
+                else if(CompareStringtoChar(return_type_token.Data,"GLuint"))
+                {
+                    return_type = gl_returntype_uint;
+                }
+                Yostr return_statement = AppendString(func_stub,GetReturnString(return_type,&func_sig_temp_arena),&func_sig_temp_arena);
+                func_stub = AppendString(return_statement,CreateStringFromLiteral("}\n",&func_sig_temp_arena),&func_sig_temp_arena);
+                AppendStringSameFrontArena(&gl_h_output,func_stub,&sm);
+                DeAllocatePartition(&func_sig_temp_arena,false);
                 PlatformOutput(true,";\n");
             }
+            
             else if(t->Type == Token_Comma)
             {
                 AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral(",",&s),&sm);
                 PlatformOutput(true,",");
             }
+            
             else if(t->Type == Token_Identifier)
             {
+                if(CompareStringtoChar(prev_token.Data,"GL_API"))
+                {
+                    return_type_token = *t;
+                }
                 AppendStringSameFrontArena(&gl_h_output,t->Data,&sm);
                 PlatformOutput(true,"%s ",t->Data.String);
             }
+            prev_token = *t;
         }
     }
     
