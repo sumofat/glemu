@@ -93,7 +93,12 @@ GLHeaderData ParseGLHeader(MemoryArena* arena,char* text_string)
 enum GLStubifyReturnTypes
 {
     gl_returntype_void,
-    gl_returntype_uint
+    gl_returntype_uint,
+    gl_returntype_int,
+    gl_returntype_glbool,
+    gl_returntype_gluint,
+    gl_returntype_glubyte,
+    gl_returntype_glenum
 };
 
 Yostr GetReturnString(GLStubifyReturnTypes type,MemoryArena* arena)
@@ -103,11 +108,31 @@ Yostr GetReturnString(GLStubifyReturnTypes type,MemoryArena* arena)
     {
         case gl_returntype_void:
         {
-            result = CreateStringFromLiteral("return;\n",arena);
+            result = CreateStringFromLiteral("\treturn;\n",arena);
         }break;
         case gl_returntype_uint:
         {
-            result = CreateStringFromLiteral("return 0;\n",arena);
+            result = CreateStringFromLiteral("\treturn 0;\n",arena);
+        }break;
+        case gl_returntype_int:
+        {
+            result = CreateStringFromLiteral("\treturn 0;\n",arena);
+        }break;
+        case gl_returntype_glbool:
+        {
+            result = CreateStringFromLiteral("\treturn false;\n",arena);
+        }break;
+        case gl_returntype_glubyte:
+        {
+            result = CreateStringFromLiteral("\treturn 0;\n",arena);
+        }break;
+        case gl_returntype_gluint:
+        {
+            result = CreateStringFromLiteral("\treturn 0;\n",arena);
+        }break;
+        case gl_returntype_glenum:
+        {
+            result = CreateStringFromLiteral("\treturn 0;\n",arena);
         }break;
         default:
         {
@@ -116,6 +141,17 @@ Yostr GetReturnString(GLStubifyReturnTypes type,MemoryArena* arena)
     }
     return result;
 }
+
+enum GLReturnTypeFlags
+{
+    gl_returntype_flag_const = 0x01
+};
+
+struct GLReturnType
+{
+    uint32_t flags;
+    Token token;
+};
 
 //1. Parse and append any unknown tokens with whitespace
 //
@@ -143,7 +179,7 @@ void main()
     gl_h_ext_output.String = "";
     gl_h_ext_output.Length = 0;
     //
-    read_file_result gl_h_file = PlatformReadEntireFile("gl.h");
+    read_file_result gl_h_file = PlatformReadEntireFile("glext.h");
     read_file_result gl_h_ext_file = PlatformReadEntireFile("glext.h");
     
     GLHeaderData header_data = ParseGLHeader(&StringsHandler::string_memory,(char*)gl_h_file.Content);
@@ -153,15 +189,49 @@ void main()
     MemoryArena func_sig_temp_arena = PlatformAllocatePartition(KiloBytes(2));
     
     Token prev_token = {};
-    Token return_type_token = {};
+    GLReturnType return_type_info = {};
     for(int i = 0;i < header_data.header_data_block.count;++i)
     {
         GLHeaderDataBlock* block = (GLHeaderDataBlock*)header_data.header_data_block.base + i;
+        
+        return_type_info.flags = 0;
         for(int j = 0;j < block->tokens.count;++j)
         {
             Token* t = (Token*)block->tokens.base + j;
             if(t->Type == Token_OpenParen)
             {
+                
+                if(CompareStringtoChar(prev_token.Data,"OPENGLES_DEPRECATED"))
+                {
+                    //Move the loop past the depecreated define.
+                    int open_paren_count = 0;
+                    int close_paren_count = 0;
+                    int k = j;
+                    for(;;)
+                    {
+                        t = (Token*)block->tokens.base + k;
+                        if(t->Type == Token_OpenParen)
+                        {
+                            ++open_paren_count;
+                        }
+                        else if(t->Type == Token_CloseParen)
+                        {
+                            ++close_paren_count;
+                        }
+                        
+                        if(open_paren_count != close_paren_count)
+                        {
+                            ++k;
+                        }
+                        else
+                        {
+                            j = k;
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                
                 AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral("(",&s),&sm);
                 PlatformOutput(true,"(",t->Data.String);
             }
@@ -177,18 +247,53 @@ void main()
                 // NOTE(Ray Garner): This is the end of the signature
                 //we throw away the semicolon and add create our braces
                 //and return type here.
-                Yostr func_stub = CreateStringFromLiteral("{\n",&func_sig_temp_arena);
+                Yostr func_stub = CreateStringFromLiteral("\n{\n",&func_sig_temp_arena);
                 GLStubifyReturnTypes return_type = {};
-                if(CompareStringtoChar(return_type_token.Data,"void"))
+                
+                if(CompareStringtoChar(return_type_info.token.Data,"void"))
                 {
                     return_type = gl_returntype_void;
                 }
-                else if(CompareStringtoChar(return_type_token.Data,"GLuint"))
+                
+                else if(CompareStringtoChar(return_type_info.token.Data,"GLuint"))
                 {
-                    return_type = gl_returntype_uint;
+                    return_type = gl_returntype_gluint;
                 }
+                
+                else if(CompareStringtoChar(return_type_info.token.Data,"int"))
+                {
+                    return_type = gl_returntype_int;
+                }
+                
+                else if(CompareStringtoChar(return_type_info.token.Data,"GLboolean"))
+                {
+                    return_type = gl_returntype_glbool;
+                }
+                
+                else if(CompareStringtoChar(return_type_info.token.Data,"GLenum"))
+                {
+                    return_type = gl_returntype_glenum;
+                }
+                
+                else if(CompareStringtoChar(return_type_info.token.Data,"GLubyte"))
+                {
+                    return_type = gl_returntype_glubyte;
+                }
+                
+                else if(CompareStringtoChar(return_type_info.token.Data,"GLenum"))
+                {
+                    return_type = gl_returntype_glenum;
+                }
+                
                 Yostr return_statement = AppendString(func_stub,GetReturnString(return_type,&func_sig_temp_arena),&func_sig_temp_arena);
+                
                 func_stub = AppendString(return_statement,CreateStringFromLiteral("}\n",&func_sig_temp_arena),&func_sig_temp_arena);
+                
+                if(return_type_info.flags & gl_returntype_flag_const)
+                {
+                    //AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral("const",&func_sig_temp_arena),&sm);
+                }
+                
                 AppendStringSameFrontArena(&gl_h_output,func_stub,&sm);
                 DeAllocatePartition(&func_sig_temp_arena,false);
                 PlatformOutput(true,";\n");
@@ -202,12 +307,23 @@ void main()
             
             else if(t->Type == Token_Identifier)
             {
-                if(CompareStringtoChar(prev_token.Data,"GL_API"))
+                if(CompareStringtoChar(prev_token.Data,"GL_API") && 
+                   CompareStringtoChar(t->Data,"const"))
                 {
-                    return_type_token = *t;
+                    return_type_info.token = *t;
+                    return_type_info.flags = gl_returntype_flag_const;
                 }
-                AppendStringSameFrontArena(&gl_h_output,t->Data,&sm);
-                PlatformOutput(true,"%s ",t->Data.String);
+                else if(CompareStringtoChar(prev_token.Data,"GL_API"))
+                {
+                    return_type_info.token = *t;
+                }
+                
+                if(!CompareStringtoChar(t->Data,"OPENGLES_DEPRECATED"))
+                {
+                    AppendStringSameFrontArena(&gl_h_output,t->Data,&sm);
+                    AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral(" ",&s),&sm);
+                    PlatformOutput(true,"%s ",t->Data.String);
+                }
             }
             prev_token = *t;
         }
@@ -244,5 +360,3 @@ void main()
     
     PlatformOutput(true,"------------END GLSTUBIFY------------\n");
 }
-
-
