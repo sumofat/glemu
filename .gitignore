@@ -1,4 +1,10 @@
 
 glstubifier/build/\.vs/glstubify/v16/
 
-glstubifier/build/
+glstubifier/build/*.exe
+glstubifier/build/*.pdb
+glstubifier/build/*.exp
+glstubifier/build/*.lib
+glstubifier/build/*.obj
+glstubifier/build/*.sln
+glstubifier/build/*.map
