@@ -5,7 +5,8 @@
 enum GLHeaderDataBlockType
 {
     glheader_data_func_sig,
-    glheader_data_func_impl
+    glheader_data_func_impl,
+    glheader_data_func_other
 };
 
 struct GLHeaderDataBlock
@@ -79,6 +80,7 @@ GLHeaderData ParseGLHeader(MemoryArena* arena,char* text_string)
                 YoyoStretchPushBack(&result.header_data_block,block);
                 continue;
             }
+            
         }
         
         if (token.Type == Token_EndOfStream)
@@ -200,7 +202,6 @@ void main()
             Token* t = (Token*)block->tokens.base + j;
             if(t->Type == Token_OpenParen)
             {
-                
                 if(CompareStringtoChar(prev_token.Data,"OPENGLES_DEPRECATED"))
                 {
                     //Move the loop past the depecreated define.
@@ -218,6 +219,7 @@ void main()
                         {
                             ++close_paren_count;
                         }
+                        
                         
                         if(open_paren_count != close_paren_count)
                         {
@@ -287,7 +289,7 @@ void main()
                 
                 Yostr return_statement = AppendString(func_stub,GetReturnString(return_type,&func_sig_temp_arena),&func_sig_temp_arena);
                 
-                func_stub = AppendString(return_statement,CreateStringFromLiteral("}\n",&func_sig_temp_arena),&func_sig_temp_arena);
+                func_stub = AppendString(return_statement,CreateStringFromLiteral("}\n\n",&func_sig_temp_arena),&func_sig_temp_arena);
                 
                 if(return_type_info.flags & gl_returntype_flag_const)
                 {
@@ -332,7 +334,7 @@ void main()
     PlatformOutput(true,"FinalOut: %s\n",gl_h_output.String);
     
     //Output stubbed gl.h
-    char* output = "";
+    char* output = gl_h_output.String;
     char* fn = "stubbed_gl.h";
     
     Yostr final_filename = {};
@@ -342,7 +344,7 @@ void main()
     char* dir = "";
     PlatformFilePointer file{};
     Yostr final_output_path = AppendStringToChar(dir,final_filename,&sm);
-    PlatformWriteMemoryToFile(&file,final_output_path.String,(void*)output,length,true,"w+");
+    PlatformWriteMemoryToFile(&file,final_output_path.String,(void*)output,gl_h_output.Length,true,"w+");
     
     //Output stubbed glext.h
     char* output_ext = "";
