@@ -80,7 +80,6 @@ GLHeaderData ParseGLHeader(MemoryArena* arena,char* text_string)
                 YoyoStretchPushBack(&result.header_data_block,block);
                 continue;
             }
-            
         }
         
         if (token.Type == Token_EndOfStream)
@@ -155,34 +154,10 @@ struct GLReturnType
     Token token;
 };
 
-//1. Parse and append any unknown tokens with whitespace
-//
-//2. When we hit a token with "GL_API" token and than ";" semi colon store that.
-//3. Insert braces 
-//4. Further recurse down and find the return parameter.
-//5. Add function body and return parameter to the string.
-//6. We might need to parse the function parameters in the case of functions that return something in the parameters.
-//7. In that case we can use a switch to zero that out.
-//8. All vars will be a zero return for now.
-// TODO(Ray Garner): Handle const case and add some more resturn types.
-//
-void main()
+void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,MemoryArena* sm)
 {
-    PlatformOutput(true,"------------BEGIN GLSTUBIFY------------\n");
-    StringsHandler::Init();
-    MemoryArena s = StringsHandler::string_memory;
-    MemoryArena sm = StringsHandler::transient_string_memory;
     uint32_t length = 0;
     uint32_t lengthext = 0;
-    Yostr gl_h_output = {};
-    Yostr gl_h_ext_output = {};
-    
-    gl_h_output.String = (char*)sm.base;
-    gl_h_ext_output.String = "";
-    gl_h_ext_output.Length = 0;
-    //
-    read_file_result gl_h_file = PlatformReadEntireFile("glext.h");
-    read_file_result gl_h_ext_file = PlatformReadEntireFile("glext.h");
     
     GLHeaderData header_data = ParseGLHeader(&StringsHandler::string_memory,(char*)gl_h_file.Content);
     
@@ -234,13 +209,13 @@ void main()
                     continue;
                 }
                 
-                AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral("(",&s),&sm);
+                AppendStringSameFrontArena(gl_h_output,CreateStringFromLiteral("(",s),sm);
                 PlatformOutput(true,"(",t->Data.String);
             }
             
             else if(t->Type == Token_CloseParen)
             {
-                AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral(")",&s),&sm);
+                AppendStringSameFrontArena(gl_h_output,CreateStringFromLiteral(")",s),sm);
                 PlatformOutput(true,")",t->Data.String);
             }
             
@@ -296,14 +271,14 @@ void main()
                     //AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral("const",&func_sig_temp_arena),&sm);
                 }
                 
-                AppendStringSameFrontArena(&gl_h_output,func_stub,&sm);
+                AppendStringSameFrontArena(gl_h_output,func_stub,sm);
                 DeAllocatePartition(&func_sig_temp_arena,false);
                 PlatformOutput(true,";\n");
             }
             
             else if(t->Type == Token_Comma)
             {
-                AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral(",",&s),&sm);
+                AppendStringSameFrontArena(gl_h_output,CreateStringFromLiteral(",",s),sm);
                 PlatformOutput(true,",");
             }
             
@@ -322,16 +297,53 @@ void main()
                 
                 if(!CompareStringtoChar(t->Data,"OPENGLES_DEPRECATED"))
                 {
-                    AppendStringSameFrontArena(&gl_h_output,t->Data,&sm);
-                    AppendStringSameFrontArena(&gl_h_output,CreateStringFromLiteral(" ",&s),&sm);
+                    AppendStringSameFrontArena(gl_h_output,t->Data,sm);
+                    AppendStringSameFrontArena(gl_h_output,CreateStringFromLiteral(" ",s),sm);
                     PlatformOutput(true,"%s ",t->Data.String);
                 }
             }
             prev_token = *t;
         }
     }
+}
+
+//1. Parse and append any unknown tokens with whitespace
+//
+//2. When we hit a token with "GL_API" token and than ";" semi colon store that.
+//3. Insert braces 
+//4. Further recurse down and find the return parameter.
+//5. Add function body and return parameter to the string.
+//6. We might need to parse the function parameters in the case of functions that return something in the parameters.
+//7. In that case we can use a switch to zero that out.
+//8. All vars will be a zero return for now.
+// TODO(Ray Garner): Handle const case and add some more resturn types.
+//
+void main()
+{
+    PlatformOutput(true,"------------BEGIN GLSTUBIFY------------\n");
+    StringsHandler::Init();
+    MemoryArena s = StringsHandler::string_memory;
+    MemoryArena sm = StringsHandler::transient_string_memory;
+    uint32_t length = 0;
+    uint32_t lengthext = 0;
+    Yostr gl_h_output = {};
+    Yostr gl_h_ext_output = {};
+    
+    gl_h_output.String = (char*)sm.base;
+    
+    read_file_result gl_h_file = PlatformReadEntireFile("gl.h");
+    read_file_result gl_h_ext_file = PlatformReadEntireFile("glext.h");
+    
+    LexTheTokens(&gl_h_output,gl_h_file,&s,&sm);
+    //DeAllocatePartition(&sm,false);
     
     PlatformOutput(true,"FinalOut: %s\n",gl_h_output.String);
+    gl_h_ext_output.String = (char*)sm.base + sm.used;
+    gl_h_ext_output.Length = 0;
+    
+    LexTheTokens(&gl_h_ext_output,gl_h_ext_file,&s,&sm);
+    
+    PlatformOutput(true,"FinalOut: %s\n",gl_h_ext_output.String);
     
     //Output stubbed gl.h
     char* output = gl_h_output.String;
@@ -347,7 +359,7 @@ void main()
     PlatformWriteMemoryToFile(&file,final_output_path.String,(void*)output,gl_h_output.Length,true,"w+");
     
     //Output stubbed glext.h
-    char* output_ext = "";
+    char* output_ext = gl_h_ext_output.String;
     char* fn_ext = "stubbed_glext.h";
     
     Yostr final_filename_ext = {};
@@ -358,7 +370,7 @@ void main()
     
     PlatformFilePointer file_ext{};
     Yostr final_output_path_ext = AppendStringToChar(dirext,final_filename_ext,&sm);
-    PlatformWriteMemoryToFile(&file_ext,final_output_path_ext.String,(void*)output_ext,lengthext,true,"w+");
+    PlatformWriteMemoryToFile(&file_ext,final_output_path_ext.String,(void*)output_ext,gl_h_ext_output.Length,true,"w+");
     
     PlatformOutput(true,"------------END GLSTUBIFY------------\n");
 }
