@@ -1,5 +1,6 @@
 #define YOYOIMPL 1
-#include "../../renderer/native_graphics_api_dx12.cpp"
+
+#define YOYO_NO_GRAPHICS 1
 #include "../../RendererInclude.h"
 
 enum GLHeaderDataBlockType
@@ -195,7 +196,6 @@ void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,M
                             ++close_paren_count;
                         }
                         
-                        
                         if(open_paren_count != close_paren_count)
                         {
                             ++k;
@@ -280,6 +280,12 @@ void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,M
             {
                 AppendStringSameFrontArena(gl_h_output,CreateStringFromLiteral(",",s),sm);
                 PlatformOutput(true,",");
+            }
+            
+            else if(t->Type == Token_Asterisk)
+            {
+                AppendStringSameFrontArena(gl_h_output,CreateStringFromLiteral("*",s),sm);
+                PlatformOutput(true,"*");
             }
             
             else if(t->Type == Token_Identifier)
