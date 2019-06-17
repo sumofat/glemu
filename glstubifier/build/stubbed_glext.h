@@ -15,7 +15,7 @@ GL_API GLvoid glResolveMultisampleFramebufferAPPLE (void )
 
 GL_API GLsync glFenceSyncAPPLE (GLenum condition ,GLbitfield flags )
 {
-	return;
+	return 0;
 }
 
 GL_API GLboolean glIsSyncAPPLE (GLsync sync )
@@ -95,7 +95,7 @@ GL_API GLvoid glVertexAttribDivisorEXT (GLuint index ,GLuint divisor )
 
 GL_API GLvoid *glMapBufferRangeEXT (GLenum target ,GLintptr offset ,GLsizeiptr length ,GLbitfield access )
 {
-	return;
+	return 0;
 }
 
 GL_API GLvoid glFlushMappedBufferRangeEXT (GLenum target ,GLintptr offset ,GLsizeiptr length )
@@ -295,7 +295,7 @@ GL_API GLvoid GL_APIENTRY glGetBufferPointervOES (GLenum target ,GLenum pname ,G
 
 GL_API GLvoid *GL_APIENTRY glMapBufferOES (GLenum target ,GLenum access )
 {
-	return;
+	return 0;
 }
 
 GL_API GLboolean GL_APIENTRY glUnmapBufferOES (GLenum target )

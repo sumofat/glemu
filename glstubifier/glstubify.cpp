@@ -100,7 +100,9 @@ enum GLStubifyReturnTypes
     gl_returntype_glbool,
     gl_returntype_gluint,
     gl_returntype_glubyte,
-    gl_returntype_glenum
+    gl_returntype_glenum,
+    gl_returntype_nullpointer,
+    gl_returntype_glsync,//is a pointer to a struct
 };
 
 Yostr GetReturnString(GLStubifyReturnTypes type,MemoryArena* arena)
@@ -136,6 +138,14 @@ Yostr GetReturnString(GLStubifyReturnTypes type,MemoryArena* arena)
         {
             result = CreateStringFromLiteral("\treturn 0;\n",arena);
         }break;
+        case gl_returntype_nullpointer:
+        {
+            result = CreateStringFromLiteral("\treturn 0;\n",arena);
+        }break;
+        case gl_returntype_glsync:
+        {
+            result = CreateStringFromLiteral("\treturn 0;\n",arena);
+        }break;
         default:
         {
             Assert(false);
@@ -153,6 +163,7 @@ struct GLReturnType
 {
     uint32_t flags;
     Token token;
+    bool is_pointer;
 };
 
 void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,MemoryArena* sm)
@@ -166,16 +177,24 @@ void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,M
     MemoryArena final_out = PlatformAllocatePartition(gl_h_file.ContentSize);
     MemoryArena func_sig_temp_arena = PlatformAllocatePartition(KiloBytes(2));
     
+    Token prev_prev_token = {};
     Token prev_token = {};
+    Token* next_token = {};
+    
     GLReturnType return_type_info = {};
+    
+    //Need one look ahead to determine pointers types.
     for(int i = 0;i < header_data.header_data_block.count;++i)
     {
         GLHeaderDataBlock* block = (GLHeaderDataBlock*)header_data.header_data_block.base + i;
         
-        return_type_info.flags = 0;
         for(int j = 0;j < block->tokens.count;++j)
         {
+            
             Token* t = (Token*)block->tokens.base + j;
+            if(j + 1 < header_data.header_data_block.count)
+                next_token = (Token*)block->tokens.base + (j+1);
+            
             if(t->Type == Token_OpenParen)
             {
                 if(CompareStringtoChar(prev_token.Data,"OPENGLES_DEPRECATED"))
@@ -226,40 +245,47 @@ void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,M
                 //and return type here.
                 Yostr func_stub = CreateStringFromLiteral("\n{\n",&func_sig_temp_arena);
                 GLStubifyReturnTypes return_type = {};
-                
-                if(CompareStringtoChar(return_type_info.token.Data,"void"))
+                // NOTE(Ray Garner): If its a pointer typee we will always return a null pointer type is equivalent to zero.
+                if(return_type_info.is_pointer || CompareStringtoChar(return_type_info.token.Data,"GLsync"))
                 {
-                    return_type = gl_returntype_void;
+                    return_type = gl_returntype_nullpointer;
                 }
-                
-                else if(CompareStringtoChar(return_type_info.token.Data,"GLuint"))
+                else
                 {
-                    return_type = gl_returntype_gluint;
-                }
-                
-                else if(CompareStringtoChar(return_type_info.token.Data,"int"))
-                {
-                    return_type = gl_returntype_int;
-                }
-                
-                else if(CompareStringtoChar(return_type_info.token.Data,"GLboolean"))
-                {
-                    return_type = gl_returntype_glbool;
-                }
-                
-                else if(CompareStringtoChar(return_type_info.token.Data,"GLenum"))
-                {
-                    return_type = gl_returntype_glenum;
-                }
-                
-                else if(CompareStringtoChar(return_type_info.token.Data,"GLubyte"))
-                {
-                    return_type = gl_returntype_glubyte;
-                }
-                
-                else if(CompareStringtoChar(return_type_info.token.Data,"GLenum"))
-                {
-                    return_type = gl_returntype_glenum;
+                    if(CompareStringtoChar(return_type_info.token.Data,"void"))
+                    {
+                        return_type = gl_returntype_void;
+                    }
+                    
+                    else if(CompareStringtoChar(return_type_info.token.Data,"GLuint"))
+                    {
+                        return_type = gl_returntype_gluint;
+                    }
+                    
+                    else if(CompareStringtoChar(return_type_info.token.Data,"int"))
+                    {
+                        return_type = gl_returntype_int;
+                    }
+                    
+                    else if(CompareStringtoChar(return_type_info.token.Data,"GLboolean"))
+                    {
+                        return_type = gl_returntype_glbool;
+                    }
+                    
+                    else if(CompareStringtoChar(return_type_info.token.Data,"GLenum"))
+                    {
+                        return_type = gl_returntype_glenum;
+                    }
+                    
+                    else if(CompareStringtoChar(return_type_info.token.Data,"GLubyte"))
+                    {
+                        return_type = gl_returntype_glubyte;
+                    }
+                    
+                    else if(CompareStringtoChar(return_type_info.token.Data,"GLenum"))
+                    {
+                        return_type = gl_returntype_glenum;
+                    }
                 }
                 
                 Yostr return_statement = AppendString(func_stub,GetReturnString(return_type,&func_sig_temp_arena),&func_sig_temp_arena);
@@ -274,6 +300,11 @@ void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,M
                 AppendStringSameFrontArena(gl_h_output,func_stub,sm);
                 DeAllocatePartition(&func_sig_temp_arena,false);
                 PlatformOutput(true,";\n");
+                
+                
+                return_type_info.is_pointer = false; 
+                return_type_info.flags = 0;
+                
             }
             
             else if(t->Type == Token_Comma)
@@ -290,14 +321,18 @@ void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,M
             
             else if(t->Type == Token_Identifier)
             {
-                if(CompareStringtoChar(prev_token.Data,"GL_API") && 
-                   CompareStringtoChar(t->Data,"const"))
+                if(CompareStringtoChar(prev_prev_token.Data,"GL_API") && 
+                   CompareStringtoChar(prev_token.Data,"const"))
                 {
                     return_type_info.token = *t;
                     return_type_info.flags = gl_returntype_flag_const;
+                    if(next_token->Type == Token_Asterisk)
+                        return_type_info.is_pointer = true;
                 }
                 else if(CompareStringtoChar(prev_token.Data,"GL_API"))
                 {
+                    if(next_token->Type == Token_Asterisk)
+                        return_type_info.is_pointer = true;
                     return_type_info.token = *t;
                 }
                 
@@ -308,6 +343,7 @@ void LexTheTokens(Yostr* gl_h_output,read_file_result gl_h_file,MemoryArena* s,M
                     PlatformOutput(true,"%s ",t->Data.String);
                 }
             }
+            prev_prev_token = prev_token;
             prev_token = *t;
         }
     }

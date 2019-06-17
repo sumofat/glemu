@@ -355,7 +355,7 @@ GL_API void GL_APIENTRY glGetShaderSource (GLuint shader ,GLsizei bufsize ,GLsiz
 
 GL_API const GLubyte *GL_APIENTRY glGetString (GLenum name )
 {
-	return;
+	return 0;
 }
 
 GL_API void GL_APIENTRY glGetTexParameterfv (GLenum target ,GLenum pname ,GLfloat *params )
