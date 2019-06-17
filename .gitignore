@@ -8,3 +8,5 @@ glstubifier/build/*.lib
 glstubifier/build/*.obj
 glstubifier/build/*.sln
 glstubifier/build/*.map
+
+\.DS_Store
