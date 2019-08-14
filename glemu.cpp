@@ -647,8 +647,15 @@ namespace OpenGLEmu
     
     CPUBuffer* GetCPUBufferAtBinding(uint64_t bindkey)
     {
-        uint64_t tt = bindkey;
-        return GetThingPtr(&cpubuffercache,(void*)&tt,CPUBuffer);        
+        if(cpubuffercache.key_size > 0)
+        {
+            uint64_t tt = bindkey;
+            return GetThingPtr(&cpubuffercache,(void*)&tt,CPUBuffer);
+        }
+        else
+        {
+            return 0;
+        }
     }
     
     YoyoVector GetCPUBufferList()
@@ -765,6 +772,7 @@ namespace OpenGLEmu
     
     GLTexture TexImage2D(void* texels,float2 dim,PixelFormat format,SamplerDescriptor sd,TextureUsage usage)
     {
+        Assert(texels);
         GLTexture texture = {};
         texture.sampler = OpenGLEmu::GetDefaultSampler();
         TextureDescriptor td = {};
@@ -903,10 +911,13 @@ namespace OpenGLEmu
         
         //reset all uniform buffers
         CPUBuffer* ub = OpenGLEmu::GetCPUBufferAtBinding(0);
-        YoyoClearVector(&ub->ranges);
-        YoyoClearVector(&ub->unit_sizes);
-        ub->entry_count = 0;
-        ub->buffer.used = 0;            
+        if(ub)
+        {
+            YoyoClearVector(&ub->ranges);
+            YoyoClearVector(&ub->unit_sizes);
+            ub->entry_count = 0;
+            ub->buffer.used = 0;
+        }
         
         //Reset shader binding back to zero
         YoyoVector pl = OpenGLEmu::GetProgramList();
@@ -1319,9 +1330,17 @@ namespace OpenGLEmu
         return ptr;
     }
     
-    void Execute()
+    void Execute(void* pass_in_c_buffer)
     {
-        void* c_buffer = RenderEncoderCode::CommandBuffer();
+        void* c_buffer = nullptr;
+        if(pass_in_c_buffer)
+        {
+            c_buffer = pass_in_c_buffer;
+        }
+        else
+        {
+            c_buffer = RenderEncoderCode::CommandBuffer();
+        }
         
         //define start values for the gl render state    
         ScissorRect default_s_rect = {0,0,(int)RendererCode::dim.x(),(int)RendererCode::dim.y()};
@@ -1380,6 +1399,7 @@ namespace OpenGLEmu
                     RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                     current_render_texture = render_texture;                            
                     render_encoder_count++;
+
                     RenderCommandEncoder re = RenderEncoderCode::RenderCommandEncoderWithDescriptor(c_buffer,&current_pass_desc);
                     RenderEncoderCode::SetFrontFaceWinding(&re,winding_order_counter_clockwise);
                     in_params.re = re;
@@ -1983,9 +2003,11 @@ namespace OpenGLEmu
             {
                 RenderEncoderCode::EndEncoding(&in_params.re);            
             }
-            
+
+//#ifdef GLEMU_PRESENT           
             //Tell the gpu to present the drawable that we wrote to
             RenderEncoderCode::PresentDrawable(c_buffer,current_drawable.state);
+//#endif
             RenderEncoderCode::Commit(c_buffer);
             
             prev_frame_pipeline_state = in_params.pipeline_state;

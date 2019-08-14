@@ -9,6 +9,10 @@
 #define GLEMU_MAX_PSO_STATES 4000
 #define GLEMU_DEFAULT_TEXTURE_DELETE_COUNT 5
 
+#define CLEAR_COLOR_BIT (1 << 1)
+#define CLEAR_STENCIL_BIT (1 << 2)
+#define CLEAR_DEPTH_BIT (1 << 3)
+
 //TODO(Ray):The naming of this is a leftover needs more thought 
 struct MatrixPassInParams
 {
@@ -343,7 +347,7 @@ namespace OpenGLEmu
     
     //TEST API
     void APInit();
-    void Execute();
+    void Execute(void* pass_in_c_buffer = nullptr);
     void PreFrameSetup();
     
     SamplerState GetSamplerStateWithDescriptor(SamplerDescriptor desc);
