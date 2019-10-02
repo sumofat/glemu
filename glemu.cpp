@@ -279,6 +279,7 @@ namespace OpenGLEmu
     //For now we just do the N frame counting scheme and revisit this later.
     void GLDeleteTexture(GLTexture* texture)
     {
+        PlatformOutput(true,"BeginDeleteTexture");
         BeginTicketMutex(&texture_mutex);
         if(texture->id == 15)
         {
@@ -329,6 +330,7 @@ namespace OpenGLEmu
                 }
             }
         }
+        
         EndTicketMutex(&texture_mutex);
     }
     
@@ -1389,6 +1391,7 @@ namespace OpenGLEmu
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
                     RenderDebug::InsertDebugSignPost(in_params.re,command->string);
 #endif
+                    PlatformOutput(true,command->string);
                     continue;    
                 }
                 
@@ -1917,8 +1920,8 @@ namespace OpenGLEmu
                     }
                     if(uni_entry.f_size > 0)
                     {
-#if METALIZER_INSERT_DEBUGSIGNPOST
                         RenderEncoderCode::SetFragmentBytes(&in_params.re,uni_entry.f_data,uni_entry.f_size,4);
+#if METALIZER_INSERT_DEBUGSIGNPOST
                         PlatformOutput(debug_out_uniforms,"UnidformBinding table entry : f_size :%d : buffer index %d \n",uni_entry.f_size,4);
 #endif
                     }
@@ -1964,6 +1967,8 @@ namespace OpenGLEmu
                     //binding for the shader at that index we should know right away we would need some introspection into the shader/
                     //at that point but we dont have that yet for current projects its not an issue.
                     
+                    //TODO(Ray):GET shader meta data and check bindings match shader inputs.
+                    
                     //Buffer bindings
                     //TODO(Ray):Allow for buffer bindings on the fragment and compute function
                     float2 buffer_range = command->buffer_range;
@@ -1971,8 +1976,10 @@ namespace OpenGLEmu
                     {
                         BufferBindingTableEntry* entry = YoyoGetVectorElement(BufferBindingTableEntry,&currently_bound_buffers,i);
                         RenderEncoderCode::SetVertexBuffer(&in_params.re,&entry->buffer,entry->offset,entry->index);
-                        //                                PlatformOutput(debug_out_high,"buffer binding entry : index:%d : offset %d : range index %d \n",entry->index,entry->offset,i);
+                        
+                       // PlatformOutput(true,"buffer binding entry : index:%d : offset %d : range index %d \n",entry->index,entry->offset,i);
                     }
+                    
                     
 #ifdef METALIZER_DEBUG_OUTPUT
                     PlatformOutput(true, "GLEMU DrawingPrimitive.\n");
