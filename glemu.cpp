@@ -1832,7 +1832,7 @@ namespace OpenGLEmu
                     continue;
                 }
                 
-                else if(command_type == framebuffer_stencil_op_sep)
+                else if(command_type == glemu_bufferstate_stencil_op_sep)
                 {
                     GLEMUStencilOpSepCommand* command = Pop(at,GLEMUStencilOpSepCommand);
                     if(command->front_or_back)
