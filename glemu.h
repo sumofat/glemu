@@ -356,6 +356,7 @@ namespace OpenGLEmu
     DepthStencilDescription GetDefaultDepthStencilDescriptor();
         
     SamplerState GetDefaultSampler();
+    GLProgram AddProgramFromSource(const char* v_s,const char* vs_name,const char* f_s,const char* fs_name,VertexDescriptor vd);
     GLProgram AddProgramFromMainLibrary(const char* vs_name,const char* fs_name,VertexDescriptor vd);
     GLProgram GetDefaultProgram();
     void CreateBufferAtBinding(uint64_t bindkey);

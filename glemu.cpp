@@ -720,6 +720,23 @@ namespace OpenGLEmu
     {
         return default_program;
     }
+
+    GLProgram AddProgramFromSource(const char* v_s,const char* vs_name,const char* f_s,const char* fs_name,VertexDescriptor vd)
+    {
+        RenderShader s = {};
+        RenderShaderCode::InitShader(&s,(char*)v_s,(char*)vs_name,(char*)f_s,(char*)fs_name);
+        GLProgram result= {};
+        result.shader = s;
+        result.vd = vd;
+        result.last_fragment_buffer_binding = uniform_buffer_bindkey;
+        result.last_fragment_data_index = 0;
+        result.last_vertex_buffer_binding = uniform_buffer_bindkey;
+        result.last_vertex_data_index = 0;
+        GLProgramKey program_hash_key = {(uint64_t)s.vs_object,(uint64_t)s.ps_object};
+        AnythingCacheCode::AddThing(&programcache,(void*)&program_hash_key,&result);
+        GLProgram* p = GetProgramPtr(program_hash_key);
+        return result;        
+    }
     
     //NOTE(Ray):TODO(Ray):What would be nice is if we had some introspection into the shader and could get
     //out and build the vertex description from that.
@@ -1835,7 +1852,7 @@ namespace OpenGLEmu
                     continue;
                 }
                 
-                else if(command_type == framebuffer_stencil_op_sep)
+                else if(command_type == glemu_bufferstate_stencil_op_sep)
                 {
                     GLEMUStencilOpSepCommand* command = Pop(at,GLEMUStencilOpSepCommand);
                     if(command->front_or_back)
