@@ -281,16 +281,8 @@ namespace OpenGLEmu
     {
         PlatformOutput(true,"BeginDeleteTexture");
         BeginTicketMutex(&texture_mutex);
-        if(texture->id == 15)
-        {
-            int a = 0;   
-        }
-        if(texture->id== 2 || texture->id == 119)
-        {
-            int a = 0;
-        }
         GLTextureKey ttk = {};
-        //ttk.api_internal_ptr = texture->texture.state;
+
         ttk.format = texture->texture.descriptor.pixelFormat;
         ttk.width = texture->texture.descriptor.width;
         ttk.height = texture->texture.descriptor.height;
@@ -310,27 +302,17 @@ namespace OpenGLEmu
                 if(!tex->texture.is_released)
                 {
                     Assert(!tex->texture.is_released);
-                    if(tex->texture.state != texture->texture.state)
-                    {
-                        
-                        GLTexture* tex = GetThingPtr(&gl_texturecache,&ttk,GLTexture);
-                        int a =0;
-                    }
-                    
                     ReleasedTextureEntry rte = {};
                     rte.tex_key = ttk;
                     rte.delete_count = GLEMU_DEFAULT_TEXTURE_DELETE_COUNT;
                     rte.current_count = 0;
                     rte.thread_id = YoyoGetThreadID();
                     rte.is_free = false;
-                    {
-                        tex->texture.is_released = true;
-                        AnythingCacheCode::AddThingFL(&resource_managment_tables.released_textures_table,&ttk,&rte);
-                    }                                    
+                    tex->texture.is_released = true;
+                    AnythingCacheCode::AddThingFL(&resource_managment_tables.released_textures_table,&ttk,&rte);
                 }
             }
         }
-        
         EndTicketMutex(&texture_mutex);
     }
     
@@ -391,7 +373,9 @@ namespace OpenGLEmu
                         Assert(tex->id == rte->tex_key.gl_tex_id);
                         Assert(tex->texture.state);
                         Assert(tex->texture.is_released);
+                        Assert(!tex->is_released);
                         RendererCode::ReleaseTexture(&tex->texture);
+                        tex->is_released = true;
                     }
 #if GLEMU_DEBUG
                     else
@@ -791,6 +775,7 @@ namespace OpenGLEmu
     
     GLTexture TexImage2D(void* texels,float2 dim,PixelFormat format,SamplerDescriptor sd,TextureUsage usage)
     {
+        BeginTicketMutex(&texture_mutex);
         Assert(texels);
         GLTexture texture = {};
         texture.sampler = OpenGLEmu::GetDefaultSampler();
@@ -812,7 +797,7 @@ namespace OpenGLEmu
             RenderGPUMemory::ReplaceRegion(texture.texture,region,0,texels,4 * dim.x());
         }
         
-        BeginTicketMutex(&texture_mutex);
+
         
         texture.gen_thread = YoyoGetThreadID();
         texture.id = GLEMuGetNextTextureID();
@@ -827,6 +812,7 @@ namespace OpenGLEmu
         k.gl_tex_id = texture.id;
         
         texture.texture.is_released = false;
+        texture.is_released = false;
         
         if(!AnythingCacheCode::AddThingFL(&gl_texturecache,&k,&texture))
         {
