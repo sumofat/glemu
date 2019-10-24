@@ -1947,6 +1947,8 @@ namespace OpenGLEmu
                             final_tex = default_texture;
                         }
                         EndTicketMutex(&texture_mutex);
+//TODO(Ray):Here we will verifiy that no textures are being used after release
+//pab                         if(DoesThingExist())
                         
                         Assert(!final_tex.texture.is_released);
                         RenderEncoderCode::SetFragmentTexture(&in_params.re,&final_tex.texture,entry->tex_index);
