@@ -328,10 +328,6 @@ namespace OpenGLEmu
     bool GLIsValidTexture(GLTexture texture)
     {
         bool result = false;
-        if(texture.id == 15)
-        {
-            int a = 0;
-        }
         GLTextureKey ttk = {};
         ttk.format = texture.texture.descriptor.pixelFormat;
         ttk.width = texture.texture.descriptor.width;
