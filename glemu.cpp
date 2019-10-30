@@ -78,7 +78,7 @@ namespace OpenGLEmu
     MemoryArena matrix_buffer_arena;
     
     bool debug_out_high = false;
-    bool debug_out_general = false;
+    bool debug_out_general = true;
     bool debug_out_uniforms = false;
     bool debug_out_signpost = true;
     RenderPipelineState prev_frame_pipeline_state;
@@ -135,7 +135,7 @@ namespace OpenGLEmu
     {
         DepthStencilDescription depth_desc = RendererCode::CreateDepthStencilDescriptor();
         depth_desc.depthWriteEnabled = false;
-        depth_desc.depthCompareFunction = compare_func_always;
+        depth_desc.depthCompareFunction = compare_func_never;
         return depth_desc;
     }
     
@@ -1392,6 +1392,11 @@ namespace OpenGLEmu
             
             u32 current_command_index = 0;
             void* at = command_list.buffer.base;
+            
+#if METALIZER_DEBUG_OUTPUT
+            PlatformOutput(debug_out_general, "GLEMU EXECTING COMMANDS COUNT: %d -- \n",command_list.count);
+#endif
+            
             while (current_command_index < command_list.count)
             {
                 GLEMUCommandHeader* header = (GLEMUCommandHeader*)at;
@@ -1405,7 +1410,10 @@ namespace OpenGLEmu
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
                     RenderDebug::InsertDebugSignPost(in_params.re,command->string);
 #endif
-                    PlatformOutput(true,command->string);
+
+#if METALIZER_DEBUG_OUTPUT
+                                        PlatformOutput(debug_out_general,command->string);
+#endif                                                
                     continue;    
                 }
                 
@@ -1505,7 +1513,9 @@ namespace OpenGLEmu
                         RendererCode::SetRenderPassDescriptor(&temp_desc);
                         
                         current_pass_desc = temp_desc;
-                        
+#if METALIZER_DEBUG_OUTPUT
+                                        PlatformOutput(debug_out_general, "GLEMU BUFFERSTATE START\n");
+#endif                                                
                         RenderEncoderCode::EndEncoding(&in_params.re);
                         init_params = false;                                
                     }
@@ -1526,7 +1536,7 @@ namespace OpenGLEmu
 #if METALIZER_DEBUG_OUTPUT
                         PlatformOutput(debug_out_general,"Framebuffer_framebuffer_end::New Pipeline State\n");
 #endif
-                        
+
                         init_params = false;                                
                     }
                     continue;
@@ -1559,6 +1569,10 @@ namespace OpenGLEmu
                     RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                     RenderEncoderCode::EndEncoding(&in_params.re);
                     init_params = false;
+
+#if METALIZER_DEBUG_OUTPUT
+                                        PlatformOutput(debug_out_general, "GLEMU CLEAR START\n");
+#endif
                     continue;
                 }
                 
@@ -1574,12 +1588,19 @@ namespace OpenGLEmu
                     RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                     RenderEncoderCode::EndEncoding(&in_params.re);
                     init_params = false;
+
+#if METALIZER_DEBUG_OUTPUT
+                                        PlatformOutput(debug_out_general, "GLEMU CLEAR END \n");
+#endif
                     continue;
                 }
                 
                 else if(command_type == glemu_bufferstate_clear_stencil_value)
                 {
                     GLEMUClearStencilCommand* command = Pop(at,GLEMUClearStencilCommand);
+#if METALIZER_DEBUG_OUTPUT
+                                        PlatformOutput(debug_out_general, "GLEMU CLEAR stencil' not implemented' \n");
+#endif
                     continue;
                 }
                 
@@ -1587,12 +1608,19 @@ namespace OpenGLEmu
                 {
                     GLEMUClearColorCommand* command = Pop(at,GLEMUClearColorCommand);                            
                     current_clear_color = command->clear_color;
+#if METALIZER_DEBUG_OUTPUT
+                                        PlatformOutput(debug_out_general, "GLEMU CLEAR Color  \n");
+#endif
                     continue;
                 }
                 
                 else if(command_type == glemu_bufferstate_clear_color_and_stencil_value)
                 {
                     GLEMUClearColorAndStencilCommand* command = Pop(at,GLEMUClearColorAndStencilCommand);
+                    
+#if METALIZER_DEBUG_OUTPUT
+                                        PlatformOutput(debug_out_general, "GLEMU CLEAR Color and stencil command \n");
+#endif
                     current_clear_color = command->clear_color;
                     continue;
                 }
@@ -1600,7 +1628,10 @@ namespace OpenGLEmu
                 else if(command_type == glemu_bufferstate_viewport_change)
                 {
                     GLEMUViewportChangeCommand* command = Pop(at,GLEMUViewportChangeCommand);
-                    PlatformOutput(true, "Viewport w: %d h: %d .\n",command->viewport.x(),command->viewport.y());
+                    
+#if METALIZER_DEBUG_OUTPUT
+                    PlatformOutput(debug_out_general, "Viewport w: %d h: %d .\n",command->viewport.x(),command->viewport.y());
+#endif
                     
                     //TODO(Ray):We need to add some checks here to keep viewport in surface bounds.
                     in_params.viewport = command->viewport;
@@ -1646,9 +1677,12 @@ namespace OpenGLEmu
                 else if(command_type == glemu_bufferstate_shader_program_change)
                 {
                     GLEMUUseProgramCommand* command = Pop(at,GLEMUUseProgramCommand);
-                    //                            if(sbb->gl_program.id != current_program.id)
+
+//TODO(Ray):Give programs IDS and make sure we dont need to switch here if its the same program
+//                    if(command->program.id != current_program.id)
                     {
                         GLProgram new_program = command->program;
+                        if(!new_program.shader.vs_object || !new_program.shader.ps_object)continue;
                         RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
                         pd.vertex_function = new_program.shader.vs_object;
                         pd.fragment_function = new_program.shader.ps_object;
@@ -1676,6 +1710,10 @@ namespace OpenGLEmu
                 {
                     GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
                     in_params.is_s_rect = true;
+
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_scissor test enable\n");
+#endif
                     RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
                     continue;
                 }
@@ -1689,6 +1727,10 @@ namespace OpenGLEmu
                     new_s_rect.height = current_render_texture.descriptor.height;
                     new_s_rect.x = 0;
                     new_s_rect.y = 0;
+
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_scissor test disable\n");
+#endif
                     RenderEncoderCode::SetScissorRect(&in_params.re, new_s_rect);
                     continue;
                 }
@@ -1783,6 +1825,9 @@ namespace OpenGLEmu
                     current_depth_desc.backFaceStencil.write_mask = command->write_mask_value;
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_stencil mask\n");
+#endif
                     continue;                            
                 }
                 
@@ -1799,6 +1844,10 @@ namespace OpenGLEmu
                     }
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_stencil mask sep\n");
+#endif
                     continue;                            
                 }
                 
@@ -1812,6 +1861,9 @@ namespace OpenGLEmu
                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_stencil func\n");
+#endif
                     continue;
                 }
                 
@@ -1831,6 +1883,9 @@ namespace OpenGLEmu
                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_stencil func sep\n");
+#endif
                     continue;
                 }
                 
@@ -1845,6 +1900,9 @@ namespace OpenGLEmu
                     current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
                     current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_stencil  op\n");
+#endif
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
                     continue;
                 }
@@ -1866,6 +1924,9 @@ namespace OpenGLEmu
                     }
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_stencil op sep\n");
+#endif
                     continue;
                 }
                 
@@ -1887,6 +1948,10 @@ namespace OpenGLEmu
                     
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_stencil func and op\n");
+#endif
                     continue;
                 }
                 
@@ -1912,6 +1977,9 @@ namespace OpenGLEmu
                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+#if METALIZER_DEBUG_OUTPUT                                
+                        PlatformOutput(debug_out_general,"Framebuffer_stencil func and op sep\n");
+#endif
                     continue;
                 }
                 
@@ -2021,7 +2089,7 @@ namespace OpenGLEmu
                     
                     
 #ifdef METALIZER_DEBUG_OUTPUT
-                    PlatformOutput(true, "GLEMU DrawingPrimitive.\n");
+                    PlatformOutput(debug_out_general, "GLEMU DrawingPrimitive.\n");
 #endif
                     
                     RenderCommandEncoder re = in_params.re;
@@ -2035,7 +2103,7 @@ namespace OpenGLEmu
                 else
                 {
                     int a = 0;
-                    // Assert(false);
+                    Assert(false);
                 }
             }
             
