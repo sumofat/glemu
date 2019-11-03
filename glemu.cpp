@@ -78,7 +78,7 @@ namespace OpenGLEmu
     MemoryArena matrix_buffer_arena;
     
     bool debug_out_high = false;
-    bool debug_out_general = true;
+    bool debug_out_general = false;
     bool debug_out_uniforms = false;
     bool debug_out_signpost = true;
     RenderPipelineState prev_frame_pipeline_state;
@@ -226,13 +226,20 @@ namespace OpenGLEmu
         temp_deleted_tex_entries = YoyoInitVector(1,GLTextureKey,false);
         
         semaphore = RenderSynchronization::DispatchSemaphoreCreate(buffer_count);
-        
-        AnythingRenderSamplerStateCache::Init(4096);
-        AnythingCacheCode::Init(&buffercache,4096,sizeof(TripleGPUBuffer),sizeof(uint64_t));
-        AnythingCacheCode::Init(&programcache,4096,sizeof(GLProgram),sizeof(GLProgramKey));
-        AnythingCacheCode::Init(&cpubuffercache,4096,sizeof(CPUBuffer),sizeof(uint64_t));
-        AnythingCacheCode::Init(&depth_stencil_state_cache,4096,sizeof(DepthStencilState),sizeof(DepthStencilDescription));
-        AnythingCacheCode::Init(&gl_texturecache,4096,sizeof(GLTexture),sizeof(GLTextureKey),true);
+
+        //NOTE(RAY):We are intentionally using a lower number here to create collisions while testing and ensuring hashtable
+        //is robust.  Increase this number to pretty much make sure collisions will be fewer if at all.
+        //It should be noted the larger the amount of concurrent entire the higher the number should be to ensure
+        //fewer collisions and vice versa.  The typical storage requirement is 4 bytes (64bits) per as the
+        //storage is of uint64.
+#define SIZE_OF_CACHE_TABLES 4096
+#define SIZE_OF_CACHE_TABLES_SMALL 4096 /// probably large enough for most small use cache to avoid collisions
+        AnythingRenderSamplerStateCache::Init(SIZE_OF_CACHE_TABLES_SMALL);
+        AnythingCacheCode::Init(&buffercache,SIZE_OF_CACHE_TABLES_SMALL,sizeof(TripleGPUBuffer),sizeof(uint64_t));
+        AnythingCacheCode::Init(&programcache,SIZE_OF_CACHE_TABLES,sizeof(GLProgram),sizeof(GLProgramKey));
+        AnythingCacheCode::Init(&cpubuffercache,SIZE_OF_CACHE_TABLES,sizeof(CPUBuffer),sizeof(uint64_t));
+        AnythingCacheCode::Init(&depth_stencil_state_cache,SIZE_OF_CACHE_TABLES,sizeof(DepthStencilState),sizeof(DepthStencilDescription));
+        AnythingCacheCode::Init(&gl_texturecache,SIZE_OF_CACHE_TABLES,sizeof(GLTexture),sizeof(GLTextureKey),true);
         
         samplerdescriptor = RendererCode::CreateSamplerDescriptor();
         defaults = samplerdescriptor;
@@ -251,7 +258,7 @@ namespace OpenGLEmu
         draw_tables.buffer_binding_table = YoyoInitVector(1,BufferBindingTableEntry,false);
         
         resource_managment_tables = {};
-        AnythingCacheCode::Init(&resource_managment_tables.released_textures_table,4096,sizeof(ReleasedTextureEntry),sizeof(GLTextureKey),true);
+        AnythingCacheCode::Init(&resource_managment_tables.released_textures_table,SIZE_OF_CACHE_TABLES,sizeof(ReleasedTextureEntry),sizeof(GLTextureKey),true);
         
         currently_bound_buffers = YoyoInitVector(1,BufferBindingTableEntry,false);
         currently_bound_frag_textures = YoyoInitVector(1,FragmentShaderTextureBindingTableEntry,false);
@@ -327,11 +334,9 @@ namespace OpenGLEmu
     
     bool GLIsValidTexture(GLTexture texture)
     {
+        
         bool result = false;
-        if(texture.id == 15)
-        {
-            int a = 0;
-        }
+        BeginTicketMutex(&texture_mutex);                                
         GLTextureKey ttk = {};
         ttk.format = texture.texture.descriptor.pixelFormat;
         ttk.width = texture.texture.descriptor.width;
@@ -349,7 +354,7 @@ namespace OpenGLEmu
         {
             result = true;
         }
-        
+        EndTicketMutex(&texture_mutex);        
         return result;        
     }
     
@@ -2020,7 +2025,7 @@ namespace OpenGLEmu
                         Assert(entry->texture.sampler.state);
                         GLTexture final_tex = entry->texture;
                         
-                        BeginTicketMutex(&texture_mutex);                                
+
                         if(GLIsValidTexture(final_tex))
                         {
 #ifdef METALIZER_INSERT_DEBUGSIGNPOST
@@ -2031,7 +2036,6 @@ namespace OpenGLEmu
                         {
                             final_tex = default_texture;
                         }
-                        EndTicketMutex(&texture_mutex);
                         
                         Assert(!final_tex.texture.is_released);
 
