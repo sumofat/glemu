@@ -170,7 +170,7 @@ namespace OpenGLEmu
         sp_rp_desc.depth_attachment.description.texture       = depth_texture;
         sp_rp_desc.depth_attachment.description.loadAction    = LoadActionClear;
         sp_rp_desc.depth_attachment.description.storeAction   = StoreActionStore;
-        sp_rp_desc.depth_attachment.clear_depth               = 10000.0f;
+        sp_rp_desc.depth_attachment.clear_depth               = 1.0f;
         
         //stencil attachment description
         sp_rp_desc.stencil_attachment.description.texture     = depth_texture;
@@ -279,7 +279,6 @@ namespace OpenGLEmu
     //For now we just do the N frame counting scheme and revisit this later.
     void GLDeleteTexture(GLTexture* texture)
     {
-        PlatformOutput(true,"BeginDeleteTexture");
         BeginTicketMutex(&texture_mutex);
         GLTextureKey ttk = {};
 
@@ -307,8 +306,10 @@ namespace OpenGLEmu
                     rte.delete_count = GLEMU_DEFAULT_TEXTURE_DELETE_COUNT;
                     rte.current_count = 0;
                     rte.thread_id = YoyoGetThreadID();
+                    PlatformOutput(true,"BeginDeleteTexture id %d generated on thread %d on thread %d /n",texture->id,texture->gen_thread,rte.thread_id);
+                    
                     rte.is_free = false;
-                    tex->texture.is_released = true;
+//                    tex->texture.is_released = true;
                     AnythingCacheCode::AddThingFL(&resource_managment_tables.released_textures_table,&ttk,&rte);
                 }
             }
@@ -362,8 +363,6 @@ namespace OpenGLEmu
             ReleasedTextureEntry* rte = YoyoGetVectorElement(ReleasedTextureEntry,&resource_managment_tables.released_textures_table.anythings,i);
             if(rte)
             {
-                //NOTE(Ray):Could probably put this in a hash but the assumption is that you wont do this often and surely not on purpose. ;)
-                //We could also have a define where you could assert here. or when you try to use a texture that is already deleted.
                 ++rte->current_count;
                 if(rte->current_count >= rte->delete_count  && rte->is_free == false)
                 {
@@ -372,10 +371,13 @@ namespace OpenGLEmu
                         GLTexture* tex = GetThingPtr(&gl_texturecache,&rte->tex_key,GLTexture);
                         Assert(tex->id == rte->tex_key.gl_tex_id);
                         Assert(tex->texture.state);
-                        Assert(tex->texture.is_released);
+                        Assert(!tex->texture.is_released);
                         Assert(!tex->is_released);
+//NOTE(RAY):There is some unknown crash inside set purgable state //TODO(Ray):Need to figure out what is causing it.
+                        PlatformOutput(true,"Finalalize delete texture id %d generated on thread %d on thread %d \n",tex->id,tex->gen_thread,rte->thread_id);
                         RendererCode::ReleaseTexture(&tex->texture);
                         tex->is_released = true;
+                        tex->texture.is_released = true;
                     }
 #if GLEMU_DEBUG
                     else
@@ -698,7 +700,7 @@ namespace OpenGLEmu
         }
         return result;
     }
-    
+   
     //Shaders
     GLProgram GetDefaultProgram()
     {
@@ -775,7 +777,9 @@ namespace OpenGLEmu
     
     GLTexture TexImage2D(void* texels,float2 dim,PixelFormat format,SamplerDescriptor sd,TextureUsage usage)
     {
+
         BeginTicketMutex(&texture_mutex);
+
         Assert(texels);
         GLTexture texture = {};
         texture.sampler = OpenGLEmu::GetDefaultSampler();
@@ -794,10 +798,16 @@ namespace OpenGLEmu
             RenderRegion region;
             region.origin = float3(0);
             region.size = dim;
-            RenderGPUMemory::ReplaceRegion(texture.texture,region,0,texels,4 * dim.x());
+            
+            //TODO(Ray):We will need a more comprehensive way to check that we are passing in the proper parameters
+            //to Replace REgions for packed and compressed formats and proper bytes sizes to multiply width and
+            //for 1d arrays should pass in 0
+            int byte_size_of_format = 4;
+            if(format == PixelFormatABGR4Unorm)
+                byte_size_of_format = 2;
+                
+            RenderGPUMemory::ReplaceRegion(texture.texture,region,0,texels,byte_size_of_format * dim.x());
         }
-        
-
         
         texture.gen_thread = YoyoGetThreadID();
         texture.id = GLEMuGetNextTextureID();
@@ -816,8 +826,9 @@ namespace OpenGLEmu
         
         if(!AnythingCacheCode::AddThingFL(&gl_texturecache,&k,&texture))
         {
-            PlatformOutput(true,"Texture already Exist was not added to texture cache");
+            PlatformOutput(true,"Texture already Exist was not added to texture cache \n");
         }
+        PlatformOutput(true,"TextureCreated id %d generated on thread %d on thread %d \n",texture.id,texture.gen_thread);
         
         EndTicketMutex(&texture_mutex);
         return texture;
@@ -1955,6 +1966,31 @@ namespace OpenGLEmu
                         EndTicketMutex(&texture_mutex);
                         
                         Assert(!final_tex.texture.is_released);
+
+//TODO(Ray):Change this define to GLEMUDIAG
+#if YOYODIAG                        
+                        for(int i = 0;i < resource_managment_tables.released_textures_table.anythings.count;++i)
+                        {
+                            ReleasedTextureEntry* rte = YoyoGetVectorElement(ReleasedTextureEntry,&resource_managment_tables.released_textures_table.anythings,i);
+                            if(rte && !rte->is_free)
+                            {
+                                if(AnythingCacheCode::DoesThingExist(&gl_texturecache,&rte->tex_key))
+                                {
+                                    GLTexture* tex = GetThingPtr(&gl_texturecache,&rte->tex_key,GLTexture);
+                                    Assert(tex->id == rte->tex_key.gl_tex_id);
+                                    Assert(tex->texture.state);
+                                    Assert(!tex->texture.is_released);
+                                    Assert(!tex->is_released);
+                                    if(tex->texture.state == final_tex.texture.state)
+                                    {
+                                        PlatformOutput(true,"CANNOT USE TEXTURE AFTER RELEASE IS CALLED!! using tex_id %d released tex id %d \n",final_tex.id,tex->id);
+                                        Assert(false);
+                                    }
+                                }
+                            }
+                        }
+#endif
+
                         RenderEncoderCode::SetFragmentTexture(&in_params.re,&final_tex.texture,entry->tex_index);
                         //TODO(Ray):Allow for mutliple sampler bindings or perhaps none and use shader defined ones
                         //for now all textures use the sampler index 0 and they must have one defined.
