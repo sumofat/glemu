@@ -76,9 +76,9 @@ namespace OpenGLEmu
     //matrix buffer add on for those who might need it.
     GPUBuffer matrix_buffer;//uniform
     MemoryArena matrix_buffer_arena;
-    
+    bool debug_out_program_change = false;
     bool debug_out_high = false;
-    bool debug_out_general = false;
+    bool debug_out_general = true;
     bool debug_out_uniforms = false;
     bool debug_out_signpost = true;
     RenderPipelineState prev_frame_pipeline_state;
@@ -220,7 +220,12 @@ namespace OpenGLEmu
         RenderCache::Init(MAX_PSO_STATES);
         
         glemu_tex_id = 0;
-        default_buffer_size = MegaBytes(1);
+
+        //TODO(Ray):Make this resizable.  GIve more control to the user over the allocation space usage
+        //lifetimes without too much hassle.
+//        default_buffer_size = MegaBytes(1);
+        default_buffer_size = MegaBytes(2);
+        
         buffer_count = 3;
         buffer_size = 1024 * SIZE_OF_SPRITE_IN_BYTES;
         temp_deleted_tex_entries = YoyoInitVector(1,GLTextureKey,false);
@@ -229,11 +234,10 @@ namespace OpenGLEmu
 
         //NOTE(RAY):We are intentionally using a lower number here to create collisions while testing and ensuring hashtable
         //is robust.  Increase this number to pretty much make sure collisions will be fewer if at all.
-        //It should be noted the larger the amount of concurrent entire the higher the number should be to ensure
-        //fewer collisions and vice versa.  The typical storage requirement is 4 bytes (64bits) per as the
+        // The typical storage requirement is 4 bytes (64bits) per as the
         //storage is of uint64.
-#define SIZE_OF_CACHE_TABLES 4096
-#define SIZE_OF_CACHE_TABLES_SMALL 4096 /// probably large enough for most small use cache to avoid collisions
+#define SIZE_OF_CACHE_TABLES 4096 * 10
+#define SIZE_OF_CACHE_TABLES_SMALL 4096 * 10 /// probably large enough for most small use cache to avoid collisions
         AnythingRenderSamplerStateCache::Init(SIZE_OF_CACHE_TABLES_SMALL);
         AnythingCacheCode::Init(&buffercache,SIZE_OF_CACHE_TABLES_SMALL,sizeof(TripleGPUBuffer),sizeof(uint64_t));
         AnythingCacheCode::Init(&programcache,SIZE_OF_CACHE_TABLES,sizeof(GLProgram),sizeof(GLProgramKey));
@@ -1418,6 +1422,7 @@ namespace OpenGLEmu
 
 #if METALIZER_DEBUG_OUTPUT
                                         PlatformOutput(debug_out_general,command->string);
+                                        PlatformOutput(debug_out_general,"\n");
 #endif                                                
                     continue;    
                 }
@@ -1635,7 +1640,7 @@ namespace OpenGLEmu
                     GLEMUViewportChangeCommand* command = Pop(at,GLEMUViewportChangeCommand);
                     
 #if METALIZER_DEBUG_OUTPUT
-                    PlatformOutput(debug_out_general, "Viewport w: %d h: %d .\n",command->viewport.x(),command->viewport.y());
+                    PlatformOutput(debug_out_general, "Viewport l:%f t:%f b:%f r:%f .\n",command->viewport.x(),command->viewport.y(),command->viewport.z(),command->viewport.w());
 #endif
                     
                     //TODO(Ray):We need to add some checks here to keep viewport in surface bounds.
@@ -1702,7 +1707,7 @@ namespace OpenGLEmu
                         Assert(next_pso.desc.vertex_function);
                         Assert(next_pso.state);
 #if METALIZER_DEBUG_OUTPUT                                
-                        PlatformOutput(debug_out_general,"Framebuffer_shader_program_change::New Pipeline State\n");
+                        PlatformOutput(debug_out_program_change,"Framebuffer_shader_program_change::New Pipeline State\n");
 #endif
                         current_program = new_program;
                         in_params.pipeline_state = next_pso;
@@ -2090,11 +2095,6 @@ namespace OpenGLEmu
                         
                        // PlatformOutput(true,"buffer binding entry : index:%d : offset %d : range index %d \n",entry->index,entry->offset,i);
                     }
-                    
-                    
-#ifdef METALIZER_DEBUG_OUTPUT
-                    PlatformOutput(debug_out_general, "GLEMU DrawingPrimitive.\n");
-#endif
                     
                     RenderCommandEncoder re = in_params.re;
                     
