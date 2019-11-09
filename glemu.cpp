@@ -14,7 +14,8 @@ namespace OpenGLEmu
     
     DepthStencilDescription ds;
     uint32_t current_reference_value;
-    
+
+    bool is_stencil_enabled;
     DepthStencilState default_depth_stencil_state;
     DepthStencilState curent_depth_stencil_state;
     
@@ -133,7 +134,7 @@ namespace OpenGLEmu
     {
         DepthStencilDescription depth_desc = RendererCode::CreateDepthStencilDescriptor();
         depth_desc.depthWriteEnabled = false;
-        depth_desc.depthCompareFunction = compare_func_never;
+        depth_desc.depthCompareFunction = compare_func_always;
         return depth_desc;
     }
     
@@ -154,7 +155,7 @@ namespace OpenGLEmu
     void APInit()
     {
         command_list.buffer = PlatformAllocatePartition(MegaBytes(2));
-        
+        is_stencil_enabled = false;
         float2 dim = RendererCode::dim;
         
         TextureDescriptor depth_texture_desc = RendererCode::Texture2DDescriptorWithPixelFormat(PixelFormatDepth32Float_Stencil8,dim.x(),dim.y(),false);
@@ -174,6 +175,7 @@ namespace OpenGLEmu
         sp_rp_desc.stencil_attachment.description.texture     = depth_texture;
         sp_rp_desc.stencil_attachment.description.loadAction  = LoadActionClear;
         sp_rp_desc.stencil_attachment.description.storeAction = StoreActionStore;
+        sp_rp_desc.stencil_attachment.clearStencil = 0.0f;
         
         sp_rp_desc.depth_attachment = sp_rp_desc.depth_attachment;
         sp_rp_desc.stencil_attachment = sp_rp_desc.stencil_attachment;
@@ -1617,6 +1619,7 @@ namespace OpenGLEmu
                 else if(command_type == glemu_bufferstate_clear_stencil_value)
                 {
                     GLEMUClearStencilCommand* command = Pop(at,GLEMUClearStencilCommand);
+                    Assert(false);
 #if METALIZER_DEBUG_OUTPUT
                                         PlatformOutput(debug_out_general, "GLEMU CLEAR stencil' not implemented' \n");
 #endif
@@ -1636,7 +1639,8 @@ namespace OpenGLEmu
                 else if(command_type == glemu_bufferstate_clear_color_and_stencil_value)
                 {
                     GLEMUClearColorAndStencilCommand* command = Pop(at,GLEMUClearColorAndStencilCommand);
-                    
+//Not properly implemented
+                    Assert(false);
 #if METALIZER_DEBUG_OUTPUT
                                         PlatformOutput(debug_out_general, "GLEMU CLEAR Color and stencil command \n");
 #endif
@@ -1815,10 +1819,11 @@ namespace OpenGLEmu
                         RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                         RenderEncoderCode::EndEncoding(&in_params.re);
 #if METALIZER_DEBUG_OUTPUT
-                        PlatformOutput(debug_out_general,"End Encoding Setting renderpassdesc to have texture\n");
+                        PlatformOutput(debug_out_general,"End Encoding Setting renderpassdesc to have texture \n");
 #endif
                         init_params = false;                                                          
                     }
+                    is_stencil_enabled = true;
                     continue;
                 }
                 
@@ -1834,6 +1839,7 @@ namespace OpenGLEmu
                     char* string = "Stencil Disabled:";
                     RenderDebug::InsertDebugSignPost(in_params.re,string);
 #endif
+                    is_stencil_enabled = false;
                     continue;
                 }
                 
@@ -1918,11 +1924,15 @@ namespace OpenGLEmu
                     current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
                     current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
                     current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
-                    DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
+                    if(is_stencil_enabled)
+                    {
+                        DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_stencil  op\n");
 #endif
-                    RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                        RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);                        
+                    }
+
                     continue;
                 }
                 
@@ -2038,7 +2048,6 @@ namespace OpenGLEmu
                         Assert(entry->texture.texture.state);
                         Assert(entry->texture.sampler.state);
                         GLTexture final_tex = entry->texture;
-                        
 
                         if(GLIsValidTexture(final_tex))
                         {
