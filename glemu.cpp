@@ -120,14 +120,12 @@ namespace OpenGLEmu
         uv_ad.offset = float3::size() + float4::size();
         uv_ad.buffer_index = 0;
         RenderEncoderCode::AddVertexAttribute(&vertex_descriptor,uv_ad);
-        
         //vertex layouts
         VertexBufferLayoutDescriptor vbld;
         vbld.step_function = step_function_per_vertex;
         vbld.step_rate = 1;
         vbld.stride = float3::size() + float4::size() + float2::size();
         RenderEncoderCode::AddVertexLayout(&vertex_descriptor,vbld);
-        
         return vertex_descriptor;
     }
     
@@ -236,8 +234,8 @@ namespace OpenGLEmu
         //is robust.  Increase this number to pretty much make sure collisions will be fewer if at all.
         // The typical storage requirement is 4 bytes (64bits) per as the
         //storage is of uint64.
-#define SIZE_OF_CACHE_TABLES 4096 * 10
-#define SIZE_OF_CACHE_TABLES_SMALL 4096 * 10 /// probably large enough for most small use cache to avoid collisions
+#define SIZE_OF_CACHE_TABLES 9973
+#define SIZE_OF_CACHE_TABLES_SMALL 9973 /// probably large enough for most small use cache to avoid collisions
         AnythingRenderSamplerStateCache::Init(SIZE_OF_CACHE_TABLES_SMALL);
         AnythingCacheCode::Init(&buffercache,SIZE_OF_CACHE_TABLES_SMALL,sizeof(TripleGPUBuffer),sizeof(uint64_t));
         AnythingCacheCode::Init(&programcache,SIZE_OF_CACHE_TABLES,sizeof(GLProgram),sizeof(GLProgramKey));
@@ -317,7 +315,7 @@ namespace OpenGLEmu
                     rte.delete_count = GLEMU_DEFAULT_TEXTURE_DELETE_COUNT;
                     rte.current_count = 0;
                     rte.thread_id = YoyoGetThreadID();
-                    PlatformOutput(true,"BeginDeleteTexture id %d generated on thread %d on thread %d /n",texture->id,texture->gen_thread,rte.thread_id);
+                    PlatformOutput(true,"BeginDeleteTexture id %d generated on thread %d on thread %d ¥n",texture->id,texture->gen_thread,rte.thread_id);
                     
                     rte.is_free = false;
 //                    tex->texture.is_released = true;
@@ -378,6 +376,10 @@ namespace OpenGLEmu
                     if(AnythingCacheCode::DoesThingExist(&gl_texturecache,&rte->tex_key))
                     {
                         GLTexture* tex = GetThingPtr(&gl_texturecache,&rte->tex_key,GLTexture);
+                        if(tex->texture.descriptor.usage == 5)
+                        {
+                            continue;
+                        }
                         Assert(tex->id == rte->tex_key.gl_tex_id);
                         Assert(tex->texture.state);
                         Assert(!tex->texture.is_released);
@@ -659,6 +661,7 @@ namespace OpenGLEmu
     {
         return cpubuffercache.anythings;
     }
+
     
     UniformBindResult AddUniformDataAtBinding(uint64_t bindkey,void* uniform_data,memory_index size)
     {
@@ -666,13 +669,15 @@ namespace OpenGLEmu
         
         CPUBuffer* buf = GetCPUBufferAtBinding(bindkey);
         float2 oldft = float2(0.0f);
-        
+
+        //This is hard to grasp make it easier to understand
+        //---------
         float2* ft = YoyoPeekVectorElement(float2,&buf->ranges);
         if(ft)
         {
             oldft = *ft;
         }
-        
+
         float2 newft = float2(oldft.y(),oldft.y() + size);
         YoyoStretchPushBack(&buf->ranges,newft);
         
@@ -682,7 +687,7 @@ namespace OpenGLEmu
         //copy uni data into buffer
         //TODO(Ray):Allow for resizing
         void* dst = (void*)PushSize(&buf->buffer, size,params);
-        if(uniform_data)
+       if(uniform_data)
             memcpy(dst,uniform_data,(uint32_t)newft.y());
         
         result.ptr = dst;
@@ -699,6 +704,10 @@ namespace OpenGLEmu
         {
             float2 range = *range_ptr;
             Assert(buf->buffer.used >= (uint32_t)range.y());
+            Assert((uint32_t)range.y() <= buf->buffer.size);
+            Assert(buf->buffer.used >= (uint32_t)range.x());
+            Assert((uint32_t)range.x() <= buf->buffer.size);
+
             result.ptr = (void*)((uint8_t*)buf->buffer.base + (uint32_t)range.x());
             result.size = range.y() - range.x();
         }
