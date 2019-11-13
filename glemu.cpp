@@ -154,7 +154,7 @@ namespace OpenGLEmu
     
     void APInit()
     {
-        command_list.buffer = PlatformAllocatePartition(MegaBytes(2));
+        command_list.buffer = PlatformAllocatePartition(MegaBytes(20));
         is_stencil_enabled = false;
         float2 dim = RendererCode::dim;
         
@@ -758,9 +758,19 @@ namespace OpenGLEmu
         result.last_fragment_data_index = 0;
         result.last_vertex_buffer_binding = uniform_buffer_bindkey;
         result.last_vertex_data_index = 0;
+
+        GLProgram* p;
         GLProgramKey program_hash_key = {(uint64_t)s.vs_object,(uint64_t)s.ps_object};
-        AnythingCacheCode::AddThing(&programcache,(void*)&program_hash_key,&result);
-        GLProgram* p = GetProgramPtr(program_hash_key);
+        if(!AnythingCacheCode::DoesThingExist(&programcache,(void*)&program_hash_key))
+        {
+            AnythingCacheCode::AddThing(&programcache,(void*)&program_hash_key,&result);
+        }
+        else
+        {
+            p = (GLProgram*)AnythingCacheCode::GetThing(&programcache,(void*)&program_hash_key);
+            Assert(p);
+        }
+        p = GetProgramPtr(program_hash_key);
         return result;
     }
     
@@ -1516,8 +1526,7 @@ namespace OpenGLEmu
                     if(command->texture.state != current_render_texture.state)
                     {
                         render_texture = command->texture;
-                        
-                        //NOTE(Ray):Since we are setting a new render target framebuffer here we default the scissor rect to thte size of the
+
                         prev_pass_desc = last_set_pass_desc;
                         
                         RenderPassDescriptor temp_desc = last_set_pass_desc;
@@ -1555,7 +1564,7 @@ namespace OpenGLEmu
                         RenderEncoderCode::EndEncoding(&in_params.re);
                         
 #if METALIZER_DEBUG_OUTPUT
-                        PlatformOutput(debug_out_general,"Framebuffer_framebuffer_end::New Pipeline State\n");
+                        PlatformOutput(debug_out_general,"Framebuffer_framebuffer_end\n");
 #endif
 
                         init_params = false;                                
