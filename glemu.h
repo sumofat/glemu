@@ -7,7 +7,7 @@
 //glemu constant defines
 #define GLEMU_MAX_ATLAS_PER_SPRITE_BATCH 10
 #define GLEMU_MAX_PSO_STATES 4000
-#define GLEMU_DEFAULT_TEXTURE_DELETE_COUNT 5
+#define GLEMU_DEFAULT_TEXTURE_DELETE_COUNT 50
 
 #define CLEAR_COLOR_BIT (1 << 1)
 #define CLEAR_STENCIL_BIT (1 << 2)
@@ -356,6 +356,7 @@ namespace OpenGLEmu
     DepthStencilDescription GetDefaultDepthStencilDescriptor();
         
     SamplerState GetDefaultSampler();
+    GLProgram AddProgramFromSource(const char* v_s,const char* vs_name,const char* f_s,const char* fs_name,VertexDescriptor vd);
     GLProgram AddProgramFromMainLibrary(const char* vs_name,const char* fs_name,VertexDescriptor vd);
     GLProgram GetDefaultProgram();
     void CreateBufferAtBinding(uint64_t bindkey);
