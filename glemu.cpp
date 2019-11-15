@@ -510,7 +510,7 @@ namespace OpenGLEmu
         {
             uint32_t size = (uint32_t)default_buffer_size;
             buffer.buffer[i] = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
-            //Assert(buffer.buffer[i].buffer);
+            Assert(buffer.buffer[i].data);
             buffer.arena[i] = AllocatePartition(size,buffer.buffer[i].data);
         }
         uint64_t tt = bindkey;
@@ -610,11 +610,10 @@ namespace OpenGLEmu
         }
     */
     
-    void AddBufferBinding(GPUBuffer buffer,uint64_t index,uint64_t offset)
+    void AddBufferBinding(uint64_t bind_key,uint64_t index,uint64_t offset)
     {
-        Assert(buffer.buffer);
         BufferBindingTableEntry entry = {};
-        entry.buffer = buffer;
+        entry.key = bind_key;
         entry.offset = offset;//NOTE(Ray):For now we will just hold the hole buffer rather than a key
         entry.index = index;
         YoyoStretchPushBack(&currently_bound_buffers,entry);
@@ -2110,7 +2109,7 @@ namespace OpenGLEmu
                     //binding for the shader at that index we should know right away we would need some introspection into the shader/
                     //at that point but we dont have that yet for current projects its not an issue.
                     
-                    //TODO(Ray):GET shader meta data and check bindings match shader inputs.
+                    //TODO(Ray):If we ever need to GET shader meta data and check bindings match shader inputs.
                     
                     //Buffer bindings
                     //TODO(Ray):Allow for buffer bindings on the fragment and compute function
@@ -2118,8 +2117,10 @@ namespace OpenGLEmu
                     for(int i = buffer_range.x();i < buffer_range.y();++i)
                     {
                         BufferBindingTableEntry* entry = YoyoGetVectorElement(BufferBindingTableEntry,&currently_bound_buffers,i);
-                        RenderEncoderCode::SetVertexBuffer(&in_params.re,&entry->buffer,entry->offset,entry->index);
+                        TripleGPUBuffer* t_buffer = OpenGLEmu::GetBufferAtBinding(entry->key);
                         
+                        GPUBuffer buffer = t_buffer->buffer[OpenGLEmu::current_buffer_index];
+                        RenderEncoderCode::SetVertexBuffer(&in_params.re,&buffer,entry->offset,entry->index);
                        // PlatformOutput(true,"buffer binding entry : index:%d : offset %d : range index %d \n",entry->index,entry->offset,i);
                     }
                     

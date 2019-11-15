@@ -59,7 +59,8 @@ struct BufferBindingTableEntry
 {
     uint32_t index;//The index to bind to on the shader
     uint32_t offset;
-    GPUBuffer buffer;//the binding id for the buffer in glemu
+    //GPUBuffer buffer;//the binding id for the buffer in glemu
+    uint64_t key;
 };
 
 struct FragmentShaderTextureBindingTableEntry
@@ -384,7 +385,7 @@ namespace OpenGLEmu
     void AddFragTextureBinding(GLTexture texture,uint32_t index);
     void AddFragTextureBinding(GLTexture texture,uint32_t tex_index,uint32_t sampler_index);
 
-    void AddBufferBinding(GPUBuffer buffer,uint64_t index,uint64_t offset);
+    void AddBufferBinding(uint64_t bind_key,uint64_t index,uint64_t offset);
 
 #define SetUniformsFragment(Type) (Type*)OpenGLEmu::SetUniformsFragment_(sizeof(Type))
     void* SetUniformsFragment_(memory_index size);
