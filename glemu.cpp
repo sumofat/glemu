@@ -1800,7 +1800,7 @@ namespace OpenGLEmu
                 {
                     GLEMUStencilStateCommand* command = Pop(at,GLEMUStencilStateCommand);
                     
-#ifdef METALIZER_INSERT_DEBUGSIGNPOST
+#if METALIZER_INSERT_DEBUGSIGNPOST
                     char* string = "Stencil Enabled:";
                     RenderDebug::InsertDebugSignPost(in_params.re,string);
 #endif
@@ -1842,7 +1842,7 @@ namespace OpenGLEmu
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
                     RenderDebug::PopDebugGroup(in_params.re);
-#ifdef METALIZER_INSERT_DEBUGSIGNPOST
+#if METALIZER_INSERT_DEBUGSIGNPOST
                     char* string = "Stencil Disabled:";
                     RenderDebug::InsertDebugSignPost(in_params.re,string);
 #endif
