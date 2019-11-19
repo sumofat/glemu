@@ -1,4 +1,5 @@
 //NOTE(Ray):GLEMU implementation file is seperated for reading convience only
+
 #ifdef YOYOIMPL
 
 namespace OpenGLEmu
@@ -86,6 +87,13 @@ namespace OpenGLEmu
     RenderPipelineState default_pipeline_state;
     Texture default_depth_stencil_texture;
     
+    YoyoVector temp_deleted_tex_entries;
+    uint64_t glemu_tex_id;
+    
+    //Need to initialize these.
+    RenderPassDescriptor default_render_pass_descriptor;
+    RenderPassBuffer pass_buffer;
+    
     void VerifyCommandBuffer(GLEMUBufferState state)
     {
         u32 current_command_index = 0;
@@ -144,13 +152,6 @@ namespace OpenGLEmu
         AnythingCacheCode::AddThing(&depth_stencil_state_cache,&default_depth_stencil_description,&depth_state);
         return depth_state;    
     }
-    
-    YoyoVector temp_deleted_tex_entries;
-    uint64_t glemu_tex_id;
-    
-    //Need to initialize these.
-    RenderPassDescriptor default_render_pass_descriptor;
-    RenderPassBuffer pass_buffer;
     
     void APInit()
     {
@@ -663,7 +664,6 @@ namespace OpenGLEmu
         return cpubuffercache.anythings;
     }
 
-    
     UniformBindResult AddUniformDataAtBinding(uint64_t bindkey,void* uniform_data,memory_index size)
     {
         UniformBindResult result;
@@ -929,20 +929,6 @@ namespace OpenGLEmu
         draw_index++;        
     }
     
-    //Commands    
-    static inline void AddHeader(GLEMUBufferState type)
-    {
-        GLEMUCommandHeader* header = PushStruct(&command_list.buffer,GLEMUCommandHeader);
-        header->type = type;
-    }
-    
-#define AddCommand(type) (type*)AddCommand_(sizeof(type));
-    static inline void* AddCommand_(uint32_t size)
-    {
-        ++command_list.count;
-        return PushSize(&command_list.buffer,size);
-    }
-    
     void PreFrameSetup()
     {
         command_list.buffer.used = 0;
@@ -1000,6 +986,26 @@ namespace OpenGLEmu
         current_buffer_index = (current_buffer_index + 1) %  buffer_count;
         
         CheckPurgeTextures();
+    }
+    
+    //Commands    
+    static inline void AddHeader(GLEMUBufferState type)
+    {
+        GLEMUCommandHeader* header = PushStruct(&command_list.buffer,GLEMUCommandHeader);
+        header->type = type;
+    }
+    
+#define AddCommand(type) (type*)AddCommand_(sizeof(type));
+    static inline void* AddCommand_(uint32_t size)
+    {
+        ++command_list.count;
+        return PushSize(&command_list.buffer,size);
+    }
+    
+#define Pop(ptr,type) (type*)Pop_(ptr,sizeof(type));ptr = (uint8_t*)ptr + (sizeof(type));
+    static inline void*  Pop_(void* ptr,uint32_t size)
+    {
+        return ptr;
     }
     
     void GLBlending(uint64_t gl_src,uint64_t gl_dst)
@@ -1267,7 +1273,7 @@ namespace OpenGLEmu
         GLEMUClearBufferCommand* end_command = AddCommand(GLEMUClearBufferCommand);        
 		end_command->is_start = false;
     }
-    
+
     void ClearStencil(uint32_t value)
     {
         AddHeader(glemu_bufferstate_clear_stencil_value);
@@ -1366,13 +1372,6 @@ namespace OpenGLEmu
 #if GLEMU_DEBUG
         VerifyCommandBuffer(glemu_bufferstate_draw_arrays);
 #endif
-        
-    }
-    
-#define Pop(ptr,type) (type*)Pop_(ptr,sizeof(type));ptr = (uint8_t*)ptr + (sizeof(type));
-    static inline void*  Pop_(void* ptr,uint32_t size)
-    {
-        return ptr;
     }
     
     void Execute(void* pass_in_c_buffer)
