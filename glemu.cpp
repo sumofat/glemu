@@ -105,7 +105,7 @@ namespace OpenGLEmu
     
     void AddBindingToBuffer(uint64_t buffer_key,uint64_t key)
     {
-        ogle_bind_buffer(&ogs,buffer_key,key);
+        ogle_add_buffer_binding(&ogs,buffer_key,key);
     }
     
     TripleGPUBuffer* GetBufferAtBinding(uint64_t bindkey)
@@ -167,7 +167,7 @@ namespace OpenGLEmu
     //if the key is a duplicate no need to add it.
     void AddCPUBindingToBuffer(uint64_t buffer_key,uint64_t key)
     {
-        ogle_bind_buffer(&ogs,buffer_key,key);
+        ogle_bind_cpubuffer(&ogs,buffer_key,key);
     }
     
     CPUBuffer* GetCPUBufferAtBinding(uint64_t bindkey)

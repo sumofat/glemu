@@ -466,7 +466,7 @@ void ogle_bind_texture_frag_sampler(OpenGLEmuState*s,GLTexture texture,uint32_t 
     
 void ogle_bind_buffer(OpenGLEmuState*s,uint64_t bind_key,uint64_t index,uint64_t offset);    
 void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey,memory_index size);    
-void ogle_bind_buffer(OpenGLEmuState* s,uint64_t buffer_key,uint64_t key);    
+void ogle_bind_cpubuffer(OpenGLEmuState* s,uint64_t buffer_key,uint64_t key);    
 CPUBuffer* ogle_cpubuffer_at_binding(OpenGLEmuState*s,uint64_t bindkey);    
 YoyoVector ogle_get_cpubuffer_list(OpenGLEmuState*s);
 UniformBindResult ogle_add_uniform_data_at_binding(OpenGLEmuState*s,uint64_t bindkey,void* uniform_data,memory_index size);    
@@ -1173,7 +1173,7 @@ void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey,memory_index size)
     
 //Add a key to the list pointing to the buffer that is previously allocated.
 //if the key is a duplicate no need to add it.
-void ogle_bind_buffer(OpenGLEmuState* s,uint64_t buffer_key,uint64_t key)
+void ogle_bind_cpubuffer(OpenGLEmuState* s,uint64_t buffer_key,uint64_t key)
 {
     uint64_t tt = key;
     if(!AnythingCacheCode::DoesThingExist(&s->cpubuffercache,&tt))
