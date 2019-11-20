@@ -22,7 +22,6 @@ struct MatrixPassInParams
     ScissorRect s_rect;
     SamplerState sampler_state;
     RenderPipelineState pipeline_state;
-    TripleGPUBuffer* vertexbuffer;
 };
 
 struct GLProgramKey
@@ -57,7 +56,9 @@ enum BufferBindTarget
 struct BufferBindingTableEntry
 {
     uint32_t index;//The index to bind to on the shader
+    uint32_t g_i;//part of the gpu key for retrieval.
     uint32_t offset;
+    
     //GPUBuffer buffer;//the binding id for the buffer in glemu
     uint64_t key;
 };
@@ -348,6 +349,7 @@ struct OpenGLEmuState
     GLProgram current_program;
     
     AnythingCache buffercache;
+    AnythingCache gpu_buffercache;
     //NOTE(Ray):intention was variable sized buffers for uniforms but decided on not using
     //Moving to fixed size vectors for each shader set since there should be only one set of uniforms
     //per shader. simpler easier but will keep cpubuffers around for variable size implementation
@@ -417,6 +419,7 @@ struct OpenGLEmuState
     RenderPassDescriptor default_render_pass_descriptor;
     RenderPassBuffer pass_buffer;
 
+    u64 gpu_ids = 0;
 };
 
 void ogle_verify_com_buf(OpenGLEmuState* s,GLEMUBufferState state);    
@@ -443,7 +446,8 @@ DepthStencilDescription ogle_get_def_depth_Sten_desc(OpenGLEmuState* s);
 DepthStencilState ogle_get_depth_sten_state(OpenGLEmuState*s,DepthStencilDescription desc);    
 //Buffers
 void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey);    
-void ogle_add_buffer_binding(OpenGLEmuState*s,uint64_t buffer_key,uint64_t key);    
+void ogle_add_buffer_binding(OpenGLEmuState*s,uint64_t buffer_key,uint64_t key);
+
 TripleGPUBuffer* ogle_get_buffer_binding(OpenGLEmuState*s,uint64_t bindkey);    
 YoyoVector ogle_get_buf_list(OpenGLEmuState*s);    
 YoyoVector ogle_get_program_list(OpenGLEmuState*s);    
@@ -464,7 +468,8 @@ void ogle_bind_texture_frag_sampler(OpenGLEmuState*s,GLTexture texture,uint32_t 
   }
 */
     
-void ogle_bind_buffer(OpenGLEmuState*s,uint64_t bind_key,uint64_t index,uint64_t offset);    
+void ogle_bind_buffer(OpenGLEmuState*s,uint64_t bind_key,uint64_t index,uint64_t offset);
+void ogle_bind_buffer_raw(OpenGLEmuState* s,u64 bk,u64 i,u64 o);
 void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey,memory_index size);    
 void ogle_bind_cpubuffer(OpenGLEmuState* s,uint64_t buffer_key,uint64_t key);    
 CPUBuffer* ogle_cpubuffer_at_binding(OpenGLEmuState*s,uint64_t bindkey);    
@@ -799,6 +804,7 @@ void ogle_init(OpenGLEmuState* s)
 #define SIZE_OF_CACHE_TABLES_SMALL 9973 /// probably large enough for most small use cache to avoid collisions
     AnythingRenderSamplerStateCache::Init(SIZE_OF_CACHE_TABLES_SMALL);
     AnythingCacheCode::Init(&s->buffercache,SIZE_OF_CACHE_TABLES_SMALL,sizeof(TripleGPUBuffer),sizeof(uint64_t));
+    AnythingCacheCode::Init(&s->gpu_buffercache,SIZE_OF_CACHE_TABLES_SMALL,sizeof(GPUBuffer),sizeof(u64));    
     AnythingCacheCode::Init(&s->programcache,SIZE_OF_CACHE_TABLES,sizeof(GLProgram),sizeof(GLProgramKey));
     AnythingCacheCode::Init(&s->cpubuffercache,SIZE_OF_CACHE_TABLES,sizeof(CPUBuffer),sizeof(uint64_t));
     AnythingCacheCode::Init(&s->depth_stencil_state_cache,SIZE_OF_CACHE_TABLES,sizeof(DepthStencilState),sizeof(DepthStencilDescription));
@@ -960,7 +966,6 @@ void ogle_purge_textures(OpenGLEmuState* s)
     YoyoClearVector(&s->temp_deleted_tex_entries);
     EndTicketMutex(&s->texture_mutex);
 }
-
     
 SamplerState ogle_get_sample_state(SamplerDescriptor desc)
 {
@@ -1040,6 +1045,14 @@ DepthStencilState ogle_get_depth_sten_state(OpenGLEmuState*s,DepthStencilDescrip
 }
     
 //Buffers
+
+
+//TODO(Ray):Should we make the creation of buffers threadsafe? for now its not
+inline u64 ogle_get_next_gpu_id(OpenGLEmuState* s)
+{
+    return ++s->gpu_ids;
+}
+
 void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey)
 {
     TripleGPUBuffer buffer = {};
@@ -1049,11 +1062,13 @@ void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey)
         buffer.buffer[i] = RenderGPUMemory::NewBufferWithLength(size,ResourceStorageModeShared);
         Assert(buffer.buffer[i].data);
         buffer.arena[i] = AllocatePartition(size,buffer.buffer[i].data);
+        buffer.buffer[i].id = ogle_get_next_gpu_id(s);
+        AnythingCacheCode::AddThing(&s->gpu_buffercache,(void*)&buffer.buffer[i].id,&buffer.buffer[i]);
     }
     uint64_t tt = bindkey;
     AnythingCacheCode::AddThing(&s->buffercache,(void*)&tt,&buffer);
 }
-    
+
 void ogle_add_buffer_binding(OpenGLEmuState*s,uint64_t buffer_key,uint64_t key)
 {
     uint64_t tt = key;
@@ -1063,11 +1078,17 @@ void ogle_add_buffer_binding(OpenGLEmuState*s,uint64_t buffer_key,uint64_t key)
         YoyoAddElementToHashTable(&s->buffercache.hash,(void*)&tt,s->buffercache.key_size,ptr);
     }
 }
-    
+
 TripleGPUBuffer* ogle_get_buffer_binding(OpenGLEmuState*s,uint64_t bindkey)
 {
     uint64_t tt = bindkey;
     return GetThingPtr(&s->buffercache,(void*)&tt,TripleGPUBuffer);        
+}
+
+GPUBuffer* ogle_get_gpu_buffer_binding(OpenGLEmuState*s,uint64_t bindkey)
+{
+    uint64_t tt = bindkey;
+    return GetThingPtr(&s->gpu_buffercache,(void*)&tt,GPUBuffer);        
 }
     
 YoyoVector ogle_get_buf_list(OpenGLEmuState*s)
@@ -1149,7 +1170,9 @@ void ogle_bind_texture_frag(OpenGLEmuState*s,GLTexture texture,uint32_t index)
 void ogle_bind_buffer(OpenGLEmuState*s,uint64_t bind_key,uint64_t index,uint64_t offset)
 {
     BufferBindingTableEntry entry = {};
-    entry.key = bind_key;
+    TripleGPUBuffer* t_buffer = ogle_get_buffer_binding(s,bind_key);
+    GPUBuffer buffer = t_buffer->buffer[s->current_buffer_index];
+    entry.key = buffer.id;
     entry.offset = offset;//NOTE(Ray):For now we will just hold the hole buffer rather than a key
     entry.index = index;
     YoyoStretchPushBack(&s->currently_bound_buffers,entry);
@@ -1157,18 +1180,17 @@ void ogle_bind_buffer(OpenGLEmuState*s,uint64_t bind_key,uint64_t index,uint64_t
     start_count += float2(0,1); 
     s->range_of_current_bound_buffers = start_count;
 }
-    
-//CPU Only buffers mainly for uniforms
-//NOTE(Ray):User controls the names unline regular gl we could add or change this in the future
-//hence the name for this func is add and not genbuffer.
-void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey,memory_index size)
+
+void ogle_bind_buffer_raw(OpenGLEmuState* s,u64 bind_key,u64 index,u64 offset)
 {
-    //Start size will be something basic like 10k but resize at the end a
-    CPUBuffer buffer = {};
-    buffer.buffer = PlatformAllocatePartition(size);
-    buffer.ranges = YoyoInitVectorSize(1,float2::size(),false);
-    uint64_t tt = bindkey;
-    AnythingCacheCode::AddThing(&s->cpubuffercache,(void*)&tt,&buffer);
+    BufferBindingTableEntry entry = {};
+    entry.key = bind_key;//Must be a gpubuffer
+    entry.offset = offset;//NOTE(Ray):For now we will just hold the hole buffer rather than a key
+    entry.index = index;
+    YoyoStretchPushBack(&s->currently_bound_buffers,entry);
+    float2 start_count = s->range_of_current_bound_buffers;
+    start_count += float2(0,1); 
+    s->range_of_current_bound_buffers = start_count;    
 }
     
 //Add a key to the list pointing to the buffer that is previously allocated.
@@ -1819,7 +1841,6 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
         in_params.s_rect = default_s_rect;
         in_params.current_drawable = current_drawable;
         in_params.viewport = float4(0,0,current_drawable.texture.descriptor.width,current_drawable.texture.descriptor.height);
-        in_params.vertexbuffer = default_bind_buffer;
         in_params.pipeline_state = s->default_pipeline_state;
             
         RenderPipelineState prev_pso = {};
@@ -2530,19 +2551,14 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
                 for(int i = buffer_range.x();i < buffer_range.y();++i)
                 {
                     BufferBindingTableEntry* entry = YoyoGetVectorElement(BufferBindingTableEntry,&s->currently_bound_buffers,i);
-                    TripleGPUBuffer* t_buffer = ogle_get_buffer_binding(s,entry->key);
-                        
-                    GPUBuffer buffer = t_buffer->buffer[s->current_buffer_index];
-                    RenderEncoderCode::SetVertexBuffer(&in_params.re,&buffer,entry->offset,entry->index);
+                    GPUBuffer* buffer = ogle_get_gpu_buffer_binding(s,entry->key);
+                    RenderEncoderCode::SetVertexBuffer(&in_params.re,buffer,entry->offset,entry->index);
                     // PlatformOutput(true,"buffer binding entry : index:%d : offset %d : range index %d \n",entry->index,entry->offset,i);
                 }
                     
                 RenderCommandEncoder re = in_params.re;
-                    
                 uint32_t bi = s->current_buffer_index;
                 uint32_t current_count = command->current_count;
-                    
-                GPUBuffer vertexbuffer = in_params.vertexbuffer->buffer[bi];
                 RenderEncoderCode::DrawPrimitives(&re, command->topology, 0, (current_count));
             }
             else

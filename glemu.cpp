@@ -160,7 +160,7 @@ namespace OpenGLEmu
     //CPU Only buffers mainly for uniforms
     void CreateCPUBufferAtBinding(uint64_t bindkey,memory_index size)
     {
-        ogle_create_buffer(&ogs,bindkey,size);
+        ogle_create_cpu_buf_bind(&ogs,bindkey,size);
     }
     
     //Add a key to the list pointing to the buffer that is previously allocated.
