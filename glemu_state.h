@@ -37,6 +37,8 @@ struct UniformBindingTableEntry
     uint32_t f_size;
     void* v_data;
     void* f_data;
+    u32 v_index;
+    u32 f_index;
 };
 
 struct TextureBindingTableEntry
@@ -72,39 +74,45 @@ struct FragmentShaderTextureBindingTableEntry
 
 enum GLEMUBufferState
 {
-    glemu_bufferstate_none,//defualt0k
+    glemu_bufferstate_none,
     glemu_bufferstate_start,//start means we are drawing NOW!1
     glemu_bufferstate_viewport_change,//means we are changin viewport size/location2
-    glemu_bufferstate_blend_change,//3
-    glemu_bufferstate_scissor_rect_change,//4
-    glemu_bufferstate_scissor_test_enable,//5
-    glemu_bufferstate_scissor_test_disable,//if disable default is full viewport settings.//6
-    glemu_bufferstate_shader_program_change,//7
-    glemu_bufferstate_bindbuffer,//8
+    glemu_bufferstate_blend_change,
+    glemu_bufferstate_scissor_rect_change,
+    glemu_bufferstate_scissor_test_enable,
+    glemu_bufferstate_scissor_test_disable,//if disable default is full viewport settings.
+    glemu_bufferstate_shader_program_change,
+    glemu_bufferstate_bindbuffer,
     glemu_bufferstate_set_uniforms,//this is a lil different than opengl but lets you pass some data easily without creating an intermediate buffer9
     //limited to 4kb<  most uniforms are under that amount
 //    glemu_bufferstate_binduniform_buffer,//Note implmenented because have no need for it yet.
+    
 //Depth and stencils
-    glemu_bufferstate_stencil_enable,//10
-    glemu_bufferstate_stencil_disable,//11
-    glemu_bufferstate_stencil_mask,//12
-    glemu_bufferstate_stencil_mask_sep,//13
-    glemu_bufferstate_stencil_func,//14
-    glemu_bufferstate_stencil_func_sep,//15
-    glemu_bufferstate_stencil_op,//16
-    glemu_bufferstate_stencil_op_sep,//17
-    glemu_bufferstate_stencil_func_and_op,//18
-    glemu_bufferstate_stencil_func_and_op_sep,//19
-    glemu_bufferstate_clear_start,//20
-    glemu_bufferstate_clear_end,//21
+    glemu_bufferstate_depth_enable,
+    glemu_bufferstate_depth_disable,
+    glemu_bufferstate_depth_func,
+    
+    glemu_bufferstate_stencil_enable,
+    glemu_bufferstate_stencil_disable,
+    glemu_bufferstate_stencil_mask,
+    glemu_bufferstate_stencil_mask_sep,
+    glemu_bufferstate_stencil_func,
+    glemu_bufferstate_stencil_func_sep,
+    glemu_bufferstate_stencil_op,
+    glemu_bufferstate_stencil_op_sep,
+    glemu_bufferstate_stencil_func_and_op,
+    glemu_bufferstate_stencil_func_and_op_sep,
+    glemu_bufferstate_clear_start,
+    glemu_bufferstate_clear_end,
 
-    glemu_bufferstate_clear_stencil_value,//22
-    glemu_bufferstate_clear_color_value,//23
-    glemu_bufferstate_clear_color_and_stencil_value,//24
+    glemu_bufferstate_clear_stencil_value,
+    glemu_bufferstate_clear_color_value,
+    glemu_bufferstate_clear_color_and_stencil_value,
     //Debug stuff
-    glemu_bufferstate_debug_signpost,//25
-    glemu_bufferstate_draw_arrays,//26
-    glemu_bufferstate_end//27
+    glemu_bufferstate_debug_signpost,
+    glemu_bufferstate_draw_arrays,
+    glemu_bufferstate_draw_elements,
+    glemu_bufferstate_end
 };
 
 /*
@@ -222,6 +230,18 @@ struct GLEMUFramebufferEnd
 	//nothing fo now
 };
 
+//depth
+struct GLEMUDepthStateCommand
+{
+	bool is_enable;
+};
+
+struct GLEMUDepthFuncCommand
+{
+	CompareFunc func;
+};
+
+//stencil
 struct GLEMUStencilStateCommand
 {
 	bool is_enable;
@@ -324,6 +344,10 @@ struct GLEMUDrawArraysCommand
 	float2 texture_buffer_range;
 	uint32_t current_count;
     PrimitiveTopologyClass topology;
+    u64 offset;
+    //for elements
+    u64 element_buffer_id;
+    u32 index_type;
 };
 
 struct OpenGLEmuState
@@ -341,6 +365,7 @@ struct OpenGLEmuState
     uint32_t current_reference_value;
 
     bool is_stencil_enabled;
+    bool is_depth_enabled;
     DepthStencilState default_depth_stencil_state;
     DepthStencilState curent_depth_stencil_state;
     
@@ -445,14 +470,16 @@ SamplerState ogle_get_def_sampler(OpenGLEmuState*s);
 DepthStencilDescription ogle_get_def_depth_Sten_desc(OpenGLEmuState* s);    
 DepthStencilState ogle_get_depth_sten_state(OpenGLEmuState*s,DepthStencilDescription desc);    
 //Buffers
-void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey);    
+GPUBuffer ogle_gen_buffer(OpenGLEmuState*s,u64 size,ResourceOptions options);
+void ogle_buffer_data_named(OpenGLEmuState* s,u64 size,GPUBuffer* buffer,void* data);
+void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey);
 void ogle_add_buffer_binding(OpenGLEmuState*s,uint64_t buffer_key,uint64_t key);
 
 TripleGPUBuffer* ogle_get_buffer_binding(OpenGLEmuState*s,uint64_t bindkey);    
 YoyoVector ogle_get_buf_list(OpenGLEmuState*s);    
 YoyoVector ogle_get_program_list(OpenGLEmuState*s);    
 YoyoVector ogle_get_texture_list(OpenGLEmuState*s);
-void ogle_bind_texture_frag(OpenGLEmuState*s,GLTexture texture,uint32_t tex_index,uint32_t sampler_index);
+void ogle_bind_texture_frag(OpenGLEmuState*s,GLTexture texture,uint32_t tex_index);
 void ogle_bind_texture_frag_sampler(OpenGLEmuState*s,GLTexture texture,uint32_t tex_index,uint32_t sampler_index);
 //TODO(Ray):Add and test this someday
 /*
@@ -482,9 +509,9 @@ uint32_t ogle_get_depth_sten_state_count(OpenGLEmuState*s);
 DepthStencilDescription ogle_get_current_depth_sten_state(OpenGLEmuState*s);    
 uint32_t ogle_get_current_stencil_ref_value(OpenGLEmuState*s);    
 UniformBindResult ogle_add_uniform_data(OpenGLEmuState* s,uint32_t buffer_binding,uint32_t data_index,GLProgram* p,uint32_t size);
-void* ogle_frag_set_uniform_(OpenGLEmuState*s,memory_index size);    
-void* ogle_vert_set_uniform_(OpenGLEmuState*s,memory_index size);    
-uint32_t ogle_add_draw_call_entry(OpenGLEmuState*s,BufferOffsetResult v_uni_bind,BufferOffsetResult f_uni_bind,BufferOffsetResult tex_binds);    
+void* ogle_frag_set_uniform_(OpenGLEmuState*s,memory_index size,u32 index);    
+void* ogle_vert_set_uniform_(OpenGLEmuState*s,memory_index size,u32 index);    
+uint32_t ogle_add_draw_call_entry(OpenGLEmuState*s,BufferOffsetResult v_uni_bind,BufferOffsetResult f_uni_bind,BufferOffsetResult tex_binds,u32 v_uni_bind_index,u32 f_uni_bind_index);    
 void ogle_end_draw(OpenGLEmuState*s,uint32_t unit_size);    
 void ogle_pre_frame_setup(OpenGLEmuState*s);
 void ogle_blend(OpenGLEmuState*s,uint64_t gl_src,uint64_t gl_dst);    
@@ -496,7 +523,13 @@ void ogle_scissor_test_f4(OpenGLEmuState*s,float4 rect);
 void ogle_viewport(OpenGLEmuState*s,int x, int y, int width, int height);
 void ogle_viewport_f4(OpenGLEmuState*s,float4 vp);    
 void ogl_bind_framebuffer_start(OpenGLEmuState*s,GLTexture texture);    
-void ogle_bind_framebuffer_end(OpenGLEmuState*s);    
+void ogle_bind_framebuffer_end(OpenGLEmuState*s);
+//depth
+void ogle_enable_depth_test(OpenGLEmuState*s);    
+void ogle_disable_stencil_test(OpenGLEmuState*s);    
+void ogle_depth_func(OpenGLEmuState* s,CompareFunc func);
+
+//stencil
 void ogle_enable_stencil_test(OpenGLEmuState*s);    
 void ogle_disable_stencil_test(OpenGLEmuState*s);    
 void ogle_stencil_mask(OpenGLEmuState*s,uint32_t mask);    
@@ -519,7 +552,13 @@ void ogle_add_debug_signpost(OpenGLEmuState*s,char* str);
 //TODO(Ray):These will clean up nice once we get uniform variable support
 void ogle_draw_arrays(OpenGLEmuState*s,uint32_t current_count,uint32_t unit_size);
 void ogle_draw_array_primitives(OpenGLEmuState*s,uint32_t current_count,uint32_t unit_size);
-void Execute(OpenGLEmuState*s,void* pass_in_c_buffer);
+void ogle_draw_elements(OpenGLEmuState*s,uint32_t count,uint32_t index_type,u64 element_buffer_id,u64 element_offset);
+
+void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue,bool commit,bool present);
+void ogle_execute_commit(OpenGLEmuState*s,void* pass_in_c_buffer,bool present);
+void ogle_execute_enqueue(OpenGLEmuState*s,void* pass_in_c_buffer);
+void ogle_execute_passthrough(OpenGLEmuState*s,void* pass_in_c_buffer);
+
 #define GLEMU_STATE
 #endif
 
@@ -1046,11 +1085,23 @@ DepthStencilState ogle_get_depth_sten_state(OpenGLEmuState*s,DepthStencilDescrip
     
 //Buffers
 
-
 //TODO(Ray):Should we make the creation of buffers threadsafe? for now its not
 inline u64 ogle_get_next_gpu_id(OpenGLEmuState* s)
 {
     return ++s->gpu_ids;
+}
+
+GPUBuffer ogle_gen_buffer(OpenGLEmuState*s,u64 size,ResourceOptions options)
+{
+    GPUBuffer buffer = RenderGPUMemory::NewBufferWithLength(size,options);
+    buffer.id = ogle_get_next_gpu_id(s);
+    AnythingCacheCode::AddThing(&s->gpu_buffercache,(void*)&buffer.id,&buffer);    
+    return buffer;
+}
+
+void ogle_buffer_data_named(OpenGLEmuState* s,u64 size,GPUBuffer* buffer,void* data)
+{
+    RenderGPUMemory::UploadBufferData(buffer,data,size);
 }
 
 void ogle_create_buffer(OpenGLEmuState*s,uint64_t bindkey)
@@ -1225,7 +1276,7 @@ YoyoVector ogle_get_cpubuffer_list(OpenGLEmuState*s)
 
 UniformBindResult ogle_add_uniform_data_at_binding(OpenGLEmuState*s,uint64_t bindkey,void* uniform_data,memory_index size)
 {
-    UniformBindResult result;
+    UniformBindResult result = {};
         
     CPUBuffer* buf = ogle_cpubuffer_at_binding(s,bindkey);
     float2 oldft = float2(0.0f);
@@ -1313,7 +1364,7 @@ UniformBindResult ogle_add_uniform_data(OpenGLEmuState* s,uint32_t buffer_bindin
 //NOTE(Ray):No uniform state can be larger than 2kb limitation of the SetVertexBytes API in METAL
 //NOTE(Ray):Unlike gl We provide the last known state of the uniform data to the user so they can manipulate
 //it how they see fit at each state more explicitely.
-void* ogle_frag_set_uniform_(OpenGLEmuState*s,memory_index size)
+void* ogle_frag_set_uniform_(OpenGLEmuState*s,memory_index size,u32 shader_index)
 {
     Assert(size <= KiloBytes(4));
     GLProgramKey key = {(uint64_t)s->current_program.shader.vs_object,(uint64_t)s->current_program.shader.ps_object};
@@ -1322,10 +1373,11 @@ void* ogle_frag_set_uniform_(OpenGLEmuState*s,memory_index size)
     UniformBindResult result = ogle_add_uniform_data(s,p->last_fragment_buffer_binding,p->last_fragment_data_index,p,size);
     p->last_fragment_data_index = result.data_index;
     p->last_fragment_buffer_binding = p->last_fragment_buffer_binding;
+    p->last_fragment_uni_index = shader_index;
     return result.ptr;
 }
-    
-void* ogle_vert_set_uniform_(OpenGLEmuState*s,memory_index size)
+
+void* ogle_vert_set_uniform_(OpenGLEmuState*s,memory_index size,u32 shader_index)
 {
     Assert(size <= KiloBytes(4));
     GLProgramKey key = {(uint64_t)s->current_program.shader.vs_object,(uint64_t)s->current_program.shader.ps_object};        
@@ -1334,11 +1386,12 @@ void* ogle_vert_set_uniform_(OpenGLEmuState*s,memory_index size)
     UniformBindResult result = ogle_add_uniform_data(s,p->last_vertex_buffer_binding,p->last_vertex_data_index,p,size);
     p->last_vertex_data_index = result.data_index;
     p->last_vertex_buffer_binding = p->last_vertex_buffer_binding;
+    p->last_vertex_uni_index = shader_index;
     return result.ptr;
 }
     
 //NOTE(Ray):No sparse entries in tables.
-uint32_t ogle_add_draw_call_entry(OpenGLEmuState*s,BufferOffsetResult v_uni_bind,BufferOffsetResult f_uni_bind,BufferOffsetResult tex_binds)
+uint32_t ogle_add_draw_call_entry(OpenGLEmuState*s,BufferOffsetResult v_uni_bind,BufferOffsetResult f_uni_bind,BufferOffsetResult tex_binds,u32 v_uni_bind_index,u32 f_uni_bind_index)
 {
     UniformBindingTableEntry ue;
     ue.call_index = s->draw_index;
@@ -1346,6 +1399,8 @@ uint32_t ogle_add_draw_call_entry(OpenGLEmuState*s,BufferOffsetResult v_uni_bind
     ue.v_data = v_uni_bind.ptr;
     ue.f_size = f_uni_bind.size;
     ue.f_data = f_uni_bind.ptr;
+    ue.v_index = v_uni_bind_index;
+    ue.f_index = f_uni_bind_index;
     uint32_t vf_index = YoyoStretchPushBack(&s->draw_tables.uniform_binding_table,ue);
         
     TextureBindingTableEntry tex_entry;
@@ -1397,6 +1452,8 @@ void ogle_pre_frame_setup(OpenGLEmuState*s)
             
         program->last_vertex_buffer_binding = 0;
         program->last_vertex_data_index = 0;
+        program->last_vertex_uni_index = 0;
+        program->last_fragment_uni_index = 0;
     }
         
     YoyoVector bl = ogle_get_buf_list(s);
@@ -1521,7 +1578,30 @@ void ogle_bind_framebuffer_end(OpenGLEmuState*s)
     ogle_add_header(s,glemu_bufferstate_end);
     GLEMUFramebufferEnd* command = OGLE_ADD_COMMAND(s,GLEMUFramebufferEnd);       
 }
+
+//depth
+void ogle_enable_depth_test(OpenGLEmuState*s)
+{
+    ogle_add_header(s,glemu_bufferstate_depth_enable);
+    GLEMUDepthStateCommand* command = OGLE_ADD_COMMAND(s,GLEMUDepthStateCommand);
+    command->is_enable = true;        
+}
     
+void ogle_disable_depth_test(OpenGLEmuState*s)
+{
+    ogle_add_header(s,glemu_bufferstate_depth_disable);
+    GLEMUDepthStateCommand* command = OGLE_ADD_COMMAND(s,GLEMUDepthStateCommand);
+    command->is_enable = false;
+}
+    
+void ogle_depth_func(OpenGLEmuState* s,CompareFunc func)
+{
+    ogle_add_header(s,glemu_bufferstate_depth_func);
+    GLEMUDepthFuncCommand* command = OGLE_ADD_COMMAND(s,GLEMUDepthFuncCommand);
+    command->func = func;
+}
+
+//stencil
 void ogle_enable_stencil_test(OpenGLEmuState*s)
 {
     ogle_add_header(s,glemu_bufferstate_stencil_enable);
@@ -1745,7 +1825,7 @@ void ogle_add_debug_signpost(OpenGLEmuState*s,char* str)
 //We grab an table entry to get all the relevant uniform data for draw call and all the
 //other info like texture bindings etc... for now at the time of writing this comment we only need to
 //keep uniforms and maybe texture bindings to complete the current project.
-//TODO(Ray):These will clean up nice once we get uniform variable support
+//@LEGACY // no longer need the unit size parameter here
 void ogle_draw_arrays(OpenGLEmuState*s,uint32_t current_count,uint32_t unit_size)
 {
     Assert(current_count != 0);
@@ -1763,11 +1843,14 @@ void ogle_draw_arrays(OpenGLEmuState*s,uint32_t current_count,uint32_t unit_size
         
     uint32_t v_data_index     = p->last_vertex_data_index;
     uint32_t f_data_index     = p->last_fragment_data_index;
+
+    u32 v_uni_index           = p->last_vertex_uni_index;
+    u32 f_uni_index           = p->last_fragment_uni_index; 
         
     BufferOffsetResult v_uni_bind_result = ogle_get_uniform_at_binding(s,v_buffer_binding,v_data_index);
     BufferOffsetResult f_uni_bind_result = ogle_get_uniform_at_binding(s,f_buffer_binding,f_data_index);
     BufferOffsetResult tex_binds = {};
-    command->uniform_table_index = ogle_add_draw_call_entry(s,v_uni_bind_result,f_uni_bind_result,tex_binds);
+    command->uniform_table_index = ogle_add_draw_call_entry(s,v_uni_bind_result,f_uni_bind_result,tex_binds,v_uni_index,f_uni_index);
     command->buffer_range = s->range_of_current_bound_buffers;
     command->texture_buffer_range = s->range_of_current_bound_frag_textures;
     command->current_count = current_count;
@@ -1777,7 +1860,7 @@ void ogle_draw_arrays(OpenGLEmuState*s,uint32_t current_count,uint32_t unit_size
     VerifyCommandBuffer(glemu_bufferstate_draw_arrays);
 #endif
 }
-    
+
 void ogle_draw_array_primitives(OpenGLEmuState*s,uint32_t current_count,uint32_t unit_size)
 {
     Assert(current_count != 0);
@@ -1795,11 +1878,15 @@ void ogle_draw_array_primitives(OpenGLEmuState*s,uint32_t current_count,uint32_t
         
     uint32_t v_data_index     = p.last_vertex_data_index;
     uint32_t f_data_index     = p.last_fragment_data_index;
+
+    u32 v_uni_index           = p.last_vertex_uni_index;
+    u32 f_uni_index           = p.last_fragment_uni_index; 
         
     BufferOffsetResult v_uni_bind_result = ogle_get_uniform_at_binding(s,v_buffer_binding,v_data_index);
     BufferOffsetResult f_uni_bind_result = ogle_get_uniform_at_binding(s,f_buffer_binding,f_data_index);
     BufferOffsetResult tex_binds = {};
-    command->uniform_table_index = ogle_add_draw_call_entry(s,v_uni_bind_result,f_uni_bind_result,tex_binds);
+    
+    command->uniform_table_index = ogle_add_draw_call_entry(s,v_uni_bind_result,f_uni_bind_result,tex_binds,v_uni_index,f_uni_index);
     command->buffer_range = s->range_of_current_bound_buffers;
     command->texture_buffer_range = s->range_of_current_bound_frag_textures;
     command->current_count = current_count;
@@ -1809,8 +1896,47 @@ void ogle_draw_array_primitives(OpenGLEmuState*s,uint32_t current_count,uint32_t
     VerifyCommandBuffer(glemu_bufferstate_draw_arrays);
 #endif
 }
+
+void ogle_draw_elements(OpenGLEmuState*s,uint32_t count,uint32_t index_type,u64 element_buffer_id,u64 element_offset = 0)
+{
+    Assert(count != 0);
+    ogle_add_header(s,glemu_bufferstate_draw_elements);
+    GLEMUDrawArraysCommand* command = OGLE_ADD_COMMAND(s,GLEMUDrawArraysCommand);                
+    command->is_from_to = true;
+    command->is_primitive_triangles = true;
+    command->topology = topology_triangle;
+
+    GLProgramKey key = {(uint64_t)s->current_program.shader.vs_object,(uint64_t)s->current_program.shader.ps_object};
+    GLProgram p = ogle_get_program(s,key);
+        
+    uint32_t v_buffer_binding = p.last_fragment_buffer_binding;
+    uint32_t f_buffer_binding = p.last_vertex_buffer_binding;
+        
+    uint32_t v_data_index     = p.last_vertex_data_index;
+    uint32_t f_data_index     = p.last_fragment_data_index;
+
+    u32 v_uni_index           = p.last_vertex_uni_index;
+    u32 f_uni_index           = p.last_fragment_uni_index; 
+        
+    BufferOffsetResult v_uni_bind_result = ogle_get_uniform_at_binding(s,v_buffer_binding,v_data_index);
+    BufferOffsetResult f_uni_bind_result = ogle_get_uniform_at_binding(s,f_buffer_binding,f_data_index);
+    BufferOffsetResult tex_binds = {};
     
-void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
+    command->uniform_table_index = ogle_add_draw_call_entry(s,v_uni_bind_result,f_uni_bind_result,tex_binds,v_uni_index,f_uni_index);
+    command->buffer_range = s->range_of_current_bound_buffers;
+    command->texture_buffer_range = s->range_of_current_bound_frag_textures;
+    command->current_count = count;
+    command->element_buffer_id = element_buffer_id;
+    command->index_type = index_type;
+    command->offset = element_offset;
+    ogle_end_draw(s,0);
+        
+#if GLEMU_DEBUG
+    VerifyCommandBuffer(glemu_bufferstate_draw_arrays);
+#endif    
+}
+
+void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = false,bool commit_cb = true,bool present = false)
 {
     void* c_buffer = nullptr;
     if(pass_in_c_buffer)
@@ -2230,6 +2356,41 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
                 }
                 continue;
             }
+
+            else if(command_type == glemu_bufferstate_depth_enable)
+            {
+                GLEMUDepthStateCommand* command = OGLE_POP(at,GLEMUDepthStateCommand);
+                    
+#ifdef METALIZER_INSERT_DEBUGSIGNPOST
+                char* string = "Depth Enabled:";
+                RenderDebug::InsertDebugSignPost(in_params.re,string);
+#endif
+#if METALIZER_DEBUG_OUTPUT
+                PlatformOutput(s->debug_out_general,"Framebuffer_depth_enable\n");
+#endif
+                //NOTE("Must havea  depth buffer attached here");
+                //The depth should? be the same size as the render target.
+                //if not fragments out of the bounds of the stencil surface will get clipped.
+                //Ensure we have a valid sized stencil buffer for the current render texture?
+                //or leave it to the use responsibility and issue a warning.
+                current_depth_desc.depthWriteEnabled = true;
+                DepthStencilState state = ogle_get_depth_sten_state(s,current_depth_desc);
+                RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                //TODO(Ray):ASSERT AFTER EVERY SET DEPTHSTENCILSTATE TO ENSURE WE GOT A VALID STATE BACK!!!                            
+                if(!last_set_pass_desc.depth_attachment.description.texture.state)
+                {
+                    //NOTE(Ray):Since we need a valid texture set for the renderpass end encoding and
+                    //start a new encoder with a valid texture set on the render pass descriptor.
+                    RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+                    RenderEncoderCode::EndEncoding(&in_params.re);
+#if METALIZER_DEBUG_OUTPUT
+                    PlatformOutput(s->debug_out_general,"End Encoding Setting renderpassdesc to have texture \n");
+#endif
+                    init_params = false;                                                          
+                }
+                s->is_depth_enabled = true;
+                continue;
+            }
                 
             else if(command_type == glemu_bufferstate_stencil_enable)
             {
@@ -2317,6 +2478,18 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
 #endif
                 continue;                            
             }
+
+            else if(command_type == glemu_bufferstate_depth_func)
+            {
+                GLEMUDepthFuncCommand* command = OGLE_POP(at,GLEMUDepthFuncCommand);
+                current_depth_desc.depthCompareFunction = command->func;
+                DepthStencilState state = ogle_get_depth_sten_state(s,current_depth_desc);
+                RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+#if METALIZER_DEBUG_OUTPUT                                
+                PlatformOutput(s->debug_out_general,"Framebuffer_stencil func\n");
+#endif
+                continue;
+            }
                 
             else if(command_type == glemu_bufferstate_stencil_func)
             {
@@ -2366,6 +2539,7 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
                 current_depth_desc.backFaceStencil.stencilFailureOperation = command->stencil_fail_op;
                 current_depth_desc.backFaceStencil.depthFailureOperation = command->depth_fail_op;
                 current_depth_desc.backFaceStencil.depthStencilPassOperation = command->depth_stencil_pass_op;
+
                 if(s->is_stencil_enabled)
                 {
                     DepthStencilState state = ogle_get_depth_sten_state(s,current_depth_desc);
@@ -2454,9 +2628,11 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
                 continue;
             }
                 
-            else if(command_type == glemu_bufferstate_draw_arrays)
+            else if(command_type == glemu_bufferstate_draw_arrays || command_type == glemu_bufferstate_draw_elements)
             {
-                GLEMUDrawArraysCommand* command = OGLE_POP(at,GLEMUDrawArraysCommand);
+                GLEMUDrawArraysCommand* command;
+                command = OGLE_POP(at,GLEMUDrawArraysCommand);                    
+
                 //None means a draw attempt here we check bindings if there are any and set up the data
                 //binding for the gpu along with sending any data to the gpu that needs sent.
                 //TODO(Ray):Later once this is working switch form buffer 3 to 2 and remove the three buffer
@@ -2466,16 +2642,16 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
                 UniformBindingTableEntry uni_entry = ogle_get_uniform_entry_for_draw(s,command->uniform_table_index);
                 if(uni_entry.v_size > 0)
                 {
-                    RenderEncoderCode::SetVertexBytes(&in_params.re,uni_entry.v_data,uni_entry.v_size,4);
+                    RenderEncoderCode::SetVertexBytes(&in_params.re,uni_entry.v_data,uni_entry.v_size,uni_entry.v_index);
 #if METALIZER_INSERT_DEBUGSIGNPOST
                     PlatformOutput(debug_out_uniforms,"UniformBinding table entry : v_size :%d :  buffer index %d \n",uni_entry.v_size,4);
 #endif
                 }
                 if(uni_entry.f_size > 0)
                 {
-                    RenderEncoderCode::SetFragmentBytes(&in_params.re,uni_entry.f_data,uni_entry.f_size,4);
+                    RenderEncoderCode::SetFragmentBytes(&in_params.re,uni_entry.f_data,uni_entry.f_size,uni_entry.f_index);
 #if METALIZER_INSERT_DEBUGSIGNPOST
-                    PlatformOutput(debug_out_uniforms,"UnidformBinding table entry : f_size :%d : buffer index %d \n",uni_entry.f_size,4);
+                    PlatformOutput(debug_out_uniforms,"UnidformBinding table entry : f_size :%d : buffer index %d \n",uni_entry.f_size,uni_entry.f_index);
 #endif
                 }
                     
@@ -2555,11 +2731,21 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
                     RenderEncoderCode::SetVertexBuffer(&in_params.re,buffer,entry->offset,entry->index);
                     // PlatformOutput(true,"buffer binding entry : index:%d : offset %d : range index %d \n",entry->index,entry->offset,i);
                 }
-                    
+
+                //TODO(Ray):We should split these out to get rid off the branching 
                 RenderCommandEncoder re = in_params.re;
                 uint32_t bi = s->current_buffer_index;
                 uint32_t current_count = command->current_count;
-                RenderEncoderCode::DrawPrimitives(&re, command->topology, 0, (current_count));
+                if(command_type == glemu_bufferstate_draw_elements)
+                {
+                    GPUBuffer* ebuffer = ogle_get_gpu_buffer_binding(s,command->element_buffer_id);
+                    RenderEncoderCode::DrawIndexedPrimitives(&re,ebuffer, command->topology,command->current_count,command->index_type,command->offset);
+                }
+                else
+                {
+                    RenderEncoderCode::DrawPrimitives(&re, command->topology, command->offset, (current_count));                    
+                }
+
             }
             else
             {
@@ -2581,9 +2767,24 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
 
 //#ifdef GLEMU_PRESENT           
         //Tell the gpu to present the drawable that we wrote to
-        RenderEncoderCode::PresentDrawable(c_buffer,current_drawable.state);
+        if(present)
+        {
+            RenderEncoderCode::PresentDrawable(c_buffer,current_drawable.state);            
+        }
+
 //#endif
-        RenderEncoderCode::Commit(c_buffer);
+        if(commit_cb)
+        {
+            RenderEncoderCode::Commit(c_buffer);            
+        }
+        else if(enqueue_cb)
+        {
+            RenderEncoderCode::Enqueue(c_buffer);
+        }
+        else
+        {
+//Not commiting or enqueuing the command buffer for execution assumes someone later down the line will
+        }
             
         s->prev_frame_pipeline_state = in_params.pipeline_state;
     }
@@ -2595,6 +2796,21 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer)
     PlatformOutput(true, "DepthStencilState count: %d\n",depth_stencil_state_count);
     PlatformOutput(true, "RenderEncoder count: %d\n",render_encoder_count);
     PlatformOutput(true, "Draw count: %d\n",s->draw_index);
+}
+
+void ogle_execute_passthrough(OpenGLEmuState*s,void* pass_in_c_buffer)
+{
+    ogle_execute(s,pass_in_c_buffer,false,false);
+}
+
+void ogle_execute_commit(OpenGLEmuState*s,void* pass_in_c_buffer,bool present = false)
+{
+    ogle_execute(s,pass_in_c_buffer,false,true,present);
+}
+
+void ogle_execute_enqueue(OpenGLEmuState*s,void* pass_in_c_buffer)
+{
+    ogle_execute(s,pass_in_c_buffer,true,false);
 }
 
 #endif

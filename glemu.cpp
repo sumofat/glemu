@@ -251,19 +251,19 @@ namespace OpenGLEmu
     //it how they see fit at each state more explicitely.
     void* SetUniformsFragment_(memory_index size)
     {
-        return ogle_frag_set_uniform_(&ogs,size);
+        return ogle_frag_set_uniform_(&ogs,size,4);
     }
     
     void* SetUniformsVertex_(memory_index size)
     {
-
-        return ogle_vert_set_uniform_(&ogs, size);
+        return ogle_vert_set_uniform_(&ogs, size,4);
     }
     
     //NOTE(Ray):No sparse entries in tables.
     uint32_t AddDrawCallEntry(BufferOffsetResult v_uni_bind,BufferOffsetResult f_uni_bind,BufferOffsetResult tex_binds)
     {
-        return ogle_add_draw_call_entry(&ogs,v_uni_bind,f_uni_bind,tex_binds);
+        //Default for the old glemu interface is 4 for uniform bindings in shaders hardcoded 
+        return ogle_add_draw_call_entry(&ogs,v_uni_bind,f_uni_bind,tex_binds,4,4);
     }
     
     void EndDraw(uint32_t unit_size)
@@ -436,7 +436,7 @@ namespace OpenGLEmu
     
     void Execute(void* pass_in_c_buffer)
     {
-        ogle_execute(&ogs,pass_in_c_buffer);
+        ogle_execute_commit(&ogs,pass_in_c_buffer);
     }
 };
 
