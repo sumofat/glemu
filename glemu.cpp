@@ -750,7 +750,7 @@ namespace OpenGLEmu
     {
         RenderShader s = {};
         RenderShaderCode::InitShaderFromDefaultLib(&s,vs_name,fs_name);
-        GLProgram result;
+        GLProgram result = {};
         result.shader = s;
         result.vd = vd;
         result.last_fragment_buffer_binding = uniform_buffer_bindkey;
@@ -1016,6 +1016,10 @@ namespace OpenGLEmu
     {
         AddHeader(glemu_bufferstate_shader_program_change);
         current_program = gl_program;
+        Assert(gl_program.id == 0);
+//        RenderPipelineStateDesc d = CreatePipelineDescriptor((void*)0,(void*)0,0);
+//        RenderPipelineState rps = NewRenderPipelineStateWithDescriptor(d);
+//        rps.vertexFunction
         GLEMUUseProgramCommand* command = AddCommand(GLEMUUseProgramCommand);
         command->program = gl_program;
     }
