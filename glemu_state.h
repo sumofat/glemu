@@ -12,6 +12,14 @@
 #define CLEAR_STENCIL_BIT (1 << 2)
 #define CLEAR_DEPTH_BIT (1 << 3)
 
+struct GLFrameBufferInternal
+{
+    u32 id;
+    YoyoBufferFixed color;
+    RenderPassDepthAttachmentDescriptor depth;
+    RenderPassStencilAttachmentDescriptor stencil;
+};
+
 //TODO(Ray):The naming of this is a leftover needs more thought 
 struct MatrixPassInParams
 {
@@ -78,6 +86,7 @@ enum GLEMUBufferState
     glemu_bufferstate_start,//start means we are drawing NOW!1
     glemu_bufferstate_viewport_change,//means we are changin viewport size/location2
     glemu_bufferstate_blend_change,
+    glemu_bufferstate_blend_change_i,
     glemu_bufferstate_scissor_rect_change,
     glemu_bufferstate_scissor_test_enable,
     glemu_bufferstate_scissor_test_disable,//if disable default is full viewport settings.
@@ -104,14 +113,18 @@ enum GLEMUBufferState
     glemu_bufferstate_stencil_func_and_op_sep,
     glemu_bufferstate_clear_start,
     glemu_bufferstate_clear_end,
+    glemu_bufferstate_clear_color_target,
 
     glemu_bufferstate_clear_stencil_value,
     glemu_bufferstate_clear_color_value,
+    glemu_bufferstate_clear_depth_value,
     glemu_bufferstate_clear_color_and_stencil_value,
     //Debug stuff
     glemu_bufferstate_debug_signpost,
     glemu_bufferstate_draw_arrays,
     glemu_bufferstate_draw_elements,
+    glemu_bufferstate_framebuffer_bind,
+    
     glemu_bufferstate_end
 };
 
@@ -199,6 +212,13 @@ struct GLEMUBlendCommand
 	BlendFactor destinationRGBBlendFactor;
 };
 
+struct GLEMUBlendICommand
+{
+	BlendFactor sourceRGBBlendFactor;
+	BlendFactor destinationRGBBlendFactor;
+    u32 index;
+};
+
 struct GLEMUUseProgramCommand
 {
 	GLProgram program;
@@ -217,6 +237,11 @@ struct GLEMUScissorRectCommand
 struct GLEMUViewportChangeCommand
 {
 	float4 viewport;
+};
+
+struct GLEMUBindFrameBufferCommand
+{
+	u64 id;
 };
 
 struct GLEMUFramebufferStart
@@ -315,10 +340,21 @@ struct GLEMUClearBufferCommand
 	uint32_t write_mask_value;
 };
 
+struct GLEMUClearColorBufferCommand
+{
+    u32 index;
+};
+
 struct GLEMUClearStencilCommand
 {
 	uint32_t write_mask_value;
 };
+
+struct GLEMUClearDepthCommand
+{
+	uint32_t value;
+};
+
 struct GLEMUClearColorCommand
 {
 	float4 clear_color;
@@ -386,6 +422,7 @@ struct OpenGLEmuState
     //the amount of these will probably be limited so once created we will probably wont need to free as far as I can tell.
     AnythingCache gl_texturecache;//In order to properly handle deleted textures across multiple objects we offer a way to query for and tracking of ..
     //delted adn allocated textures. 
+    AnythingCache gl_framebuffer_cache;
     
     memory_index default_buffer_size;
     
@@ -445,6 +482,7 @@ struct OpenGLEmuState
     RenderPassBuffer pass_buffer;
 
     u64 gpu_ids = 0;
+    u64 framebuffer_ids = 0;    
 };
 
 void ogle_verify_com_buf(OpenGLEmuState* s,GLEMUBufferState state);    
@@ -468,7 +506,14 @@ SamplerDescriptor ogle_get_sampler_desc(OpenGLEmuState*s);
 SamplerState ogle_get_def_sampler(OpenGLEmuState*s);    
 //Depth and Stencil
 DepthStencilDescription ogle_get_def_depth_Sten_desc(OpenGLEmuState* s);    
-DepthStencilState ogle_get_depth_sten_state(OpenGLEmuState*s,DepthStencilDescription desc);    
+DepthStencilState ogle_get_depth_sten_state(OpenGLEmuState*s,DepthStencilDescription desc);
+//framebuffer/Rendertargets
+u64 ogle_gen_framebuffer(OpenGLEmuState* s);
+void ogle_fb_tex2d_color(OpenGLEmuState* s,u64 id,u32 index,GLTexture texture,u32 mipmap_level,LoadAction l = LoadActionLoad,StoreAction st = StoreActionStore);
+void ogle_fb_tex2d_depth(OpenGLEmuState* s,u64 id,GLTexture texture,u32 mipmap_level,LoadAction l = LoadActionLoad,StoreAction st = StoreActionStore);
+void ogle_fb_tex2d_stencil(OpenGLEmuState* s,u64 id,GLTexture texture,u32 mipmap_level,LoadAction l = LoadActionLoad,StoreAction st = StoreActionStore);
+void ogle_bind_framebuffer(OpenGLEmuState* s,u64 id);
+
 //Buffers
 GPUBuffer ogle_gen_buffer(OpenGLEmuState*s,u64 size,ResourceOptions options);
 void ogle_buffer_data_named(OpenGLEmuState* s,u64 size,GPUBuffer* buffer,void* data);
@@ -514,7 +559,8 @@ void* ogle_vert_set_uniform_(OpenGLEmuState*s,memory_index size,u32 index);
 uint32_t ogle_add_draw_call_entry(OpenGLEmuState*s,BufferOffsetResult v_uni_bind,BufferOffsetResult f_uni_bind,BufferOffsetResult tex_binds,u32 v_uni_bind_index,u32 f_uni_bind_index);    
 void ogle_end_draw(OpenGLEmuState*s,uint32_t unit_size);    
 void ogle_pre_frame_setup(OpenGLEmuState*s);
-void ogle_blend(OpenGLEmuState*s,uint64_t gl_src,uint64_t gl_dst);    
+void ogle_blend(OpenGLEmuState*s,uint64_t gl_src,uint64_t gl_dst);
+void ogle_blend_i(OpenGLEmuState*s,u32 i,uint64_t gl_src,uint64_t gl_dst);    
 void ogle_use_program(OpenGLEmuState*s,GLProgram gl_program);    
 void ogle_enable_scissor_test(OpenGLEmuState*s);    
 void ogle_disable_scissor_test(OpenGLEmuState*s);    
@@ -524,9 +570,10 @@ void ogle_viewport(OpenGLEmuState*s,int x, int y, int width, int height);
 void ogle_viewport_f4(OpenGLEmuState*s,float4 vp);    
 void ogl_bind_framebuffer_start(OpenGLEmuState*s,GLTexture texture);    
 void ogle_bind_framebuffer_end(OpenGLEmuState*s);
+
 //depth
-void ogle_enable_depth_test(OpenGLEmuState*s);    
-void ogle_disable_stencil_test(OpenGLEmuState*s);    
+void ogle_enable_depth_test(OpenGLEmuState*s);
+void ogle_disable_depth_test(OpenGLEmuState*s);
 void ogle_depth_func(OpenGLEmuState* s,CompareFunc func);
 
 //stencil
@@ -535,11 +582,14 @@ void ogle_disable_stencil_test(OpenGLEmuState*s);
 void ogle_stencil_mask(OpenGLEmuState*s,uint32_t mask);    
 void ogle_stencil_mask_sep(OpenGLEmuState*s,uint32_t front_or_back,uint32_t mask);    
 void ogle_stencil_func(OpenGLEmuState*s,CompareFunc func,uint32_t ref,uint32_t mask);    
-void ogle_stencil_func_sep(OpenGLEmuState*s,uint32_t front_or_back,CompareFunc func,uint32_t ref,uint32_t mask);    
+void ogle_stencil_func_sep(OpenGLEmuState*s,uint32_t front_or_back,CompareFunc func,uint32_t ref,uint32_t mask);
+void ogle_stencil_op(OpenGLEmuState*s,StencilOp sten_fail,StencilOp dpfail,StencilOp dppass);
 void ogle_stencil_op_sep(OpenGLEmuState*s,uint32_t front_or_back,StencilOp sten_fail,StencilOp dpfail,StencilOp dppass);    
 void ogle_stencil_func_and_op(OpenGLEmuState*s,CompareFunc func,uint32_t ref,uint32_t mask,StencilOp sten_fail,StencilOp dpfail,StencilOp dppass);    
 void ogle_stencil_Func_and_op_sep(OpenGLEmuState*s,uint32_t front_or_back,CompareFunc func,uint32_t ref,uint32_t mask,StencilOp sten_fail,StencilOp dpfail,StencilOp dppass);    
 void ogle_clear_buffer(OpenGLEmuState*s,uint32_t buffer_bits);
+void ogle_clear_color_target(OpenGLEmuState*s,uint32_t index);
+void ogle_clear_depth(OpenGLEmuState*s,uint32_t value);    
 void ogle_clear_stencil(OpenGLEmuState*s,uint32_t value);    
 void ogle_clear_color(OpenGLEmuState*s,float4 value);    
 void ogle_clear_color_and_stencil(OpenGLEmuState*s,float4 color,uint32_t stencil);    
@@ -700,13 +750,16 @@ GLTexture ogle_tex_image_2d_with_sampler(OpenGLEmuState*s,void* texels,float2 di
 {
     BeginTicketMutex(&s->texture_mutex);
 
-    Assert(texels);
     GLTexture texture = {};
     texture.sampler = ogle_get_def_sampler(s);
     TextureDescriptor td = {};
     td = RendererCode::Texture2DDescriptorWithPixelFormat(format,dim.x(),dim.y(),false);
 #if OSX
     td.storageMode = StorageModeManaged;
+    if(format == PixelFormatDepth32Float_Stencil8 || format == PixelFormatX32_Stencil8 || format == PixelFormatX24_Stencil8)
+    {
+        td.storageMode = StorageModePrivate;
+    }
 #endif
     td.usage = (TextureUsage)usage;
     texture.texture = RendererCode::NewTextureWithDescriptor(td);
@@ -797,7 +850,9 @@ void ogle_api_init(OpenGLEmuState* s)
     sprite_rp_ca_desc.clear_color = float4(0.392f,0.584f,0.929f,1);//corflower blue of course
     sprite_rp_ca_desc.description.loadAction = LoadActionLoad;
     sprite_rp_ca_desc.description.storeAction = StoreActionStore;
+
     RenderEncoderCode::AddRenderPassColorAttachment(&sp_rp_desc,&sprite_rp_ca_desc);
+    
     RenderEncoderCode::SetRenderPassColorAttachmentDescriptor(&sp_rp_desc,0);
         
     s->default_render_pass_descriptor = sp_rp_desc;
@@ -848,7 +903,8 @@ void ogle_init(OpenGLEmuState* s)
     AnythingCacheCode::Init(&s->cpubuffercache,SIZE_OF_CACHE_TABLES,sizeof(CPUBuffer),sizeof(uint64_t));
     AnythingCacheCode::Init(&s->depth_stencil_state_cache,SIZE_OF_CACHE_TABLES,sizeof(DepthStencilState),sizeof(DepthStencilDescription));
     AnythingCacheCode::Init(&s->gl_texturecache,SIZE_OF_CACHE_TABLES,sizeof(GLTexture),sizeof(GLTextureKey),true);
-        
+    AnythingCacheCode::Init(&s->gl_framebuffer_cache,SIZE_OF_CACHE_TABLES,sizeof(GLFrameBufferInternal),sizeof(u64),true);
+    
     s->samplerdescriptor = RendererCode::CreateSamplerDescriptor();
     s->defaults = s->samplerdescriptor;
         
@@ -1510,6 +1566,17 @@ void ogle_blend(OpenGLEmuState*s,uint64_t gl_src,uint64_t gl_dst)
     uint64_t interim_dest = gl_dst;
     command->destinationRGBBlendFactor = (BlendFactor)(uint32_t)RenderGLEnum::GetMetalEnumForGLEnum(&interim_dest);
 }
+
+void ogle_blend_i(OpenGLEmuState*s,u32 i,uint64_t gl_src,uint64_t gl_dst)
+{
+    ogle_add_header(s,glemu_bufferstate_blend_change);
+    GLEMUBlendICommand* command = OGLE_ADD_COMMAND(s,GLEMUBlendICommand);        
+    uint64_t interim = gl_src;
+    command->sourceRGBBlendFactor = (BlendFactor)(uint32_t)RenderGLEnum::GetMetalEnumForGLEnum(&interim);
+    uint64_t interim_dest = gl_dst;
+    command->destinationRGBBlendFactor = (BlendFactor)(uint32_t)RenderGLEnum::GetMetalEnumForGLEnum(&interim_dest);
+    command->index = i;
+}
     
 void ogle_use_program(OpenGLEmuState*s,GLProgram gl_program)
 {
@@ -1561,7 +1628,104 @@ void ogle_viewport_f4(OpenGLEmuState*s,float4 vp)
 {
     ogle_viewport(s,vp.x(),vp.y(),vp.z(),vp.w());
 }
-    
+
+u64 ogle_gen_framebuffer(OpenGLEmuState* s)
+{
+    GLFrameBufferInternal newfb = {};
+    u64 id = ++s->framebuffer_ids;
+    newfb.id = id;
+    YoyoBufferFixed fb = BufInit(4,sizeof(RenderPassColorAttachmentDescriptor));
+    newfb.color = fb;
+    for(int i = 0;i < 4;++i)
+    {
+        RenderPassColorAttachmentDescriptor rad = {};
+        PushBuf(&newfb.color,&rad);
+    }
+    AnythingCacheCode::AddThingFL(&s->gl_framebuffer_cache,(void*)&id ,&newfb);
+    return id;
+}
+
+void ogle_fb_tex2d_color(OpenGLEmuState* s,u64 id,u32 index,GLTexture texture,u32 mipmap_level,LoadAction l,StoreAction st)
+{
+    //NOTE(Ray):Since on apple hardware the absolute minimum spec for metal is 4 we will use that as
+    //our low value
+    //TODO(Ray):Get the max number of color attachements allowed from the hardware or tier.
+    Assert(index < 4);
+    if(AnythingCacheCode::DoesThingExist(&s->gl_framebuffer_cache,(void*)&id))
+    {
+        GLFrameBufferInternal* fb = GetThingPtr(&s->gl_framebuffer_cache,(void*)&id,GLFrameBufferInternal);
+        RenderPassColorAttachmentDescriptor* cd = (RenderPassColorAttachmentDescriptor*)GetBufEle(&fb->color,index);
+        RenderPassAttachmentDescriptor rad = {};
+        rad.texture = texture.texture;
+        rad.level = mipmap_level;
+        rad.loadAction = l;
+        rad.storeAction = st;
+        rad.storeActionOptions = StoreActionOptionNone;
+        cd->clear_color = float4(0.0f);
+        cd->description = rad;
+    }
+    else
+    {
+//Your framebuffer is invalid or does not exist.
+        Assert(false);
+    }
+}
+
+void ogle_fb_tex2d_depth(OpenGLEmuState* s,u64 id,GLTexture texture,u32 mipmap_level,LoadAction l,StoreAction st)
+{
+    u64 sid = id;
+    if(AnythingCacheCode::DoesThingExist(&s->gl_framebuffer_cache,(void*)&sid))
+    {
+        GLFrameBufferInternal* fb = GetThingPtr(&s->gl_framebuffer_cache,(void*)&id,GLFrameBufferInternal);
+        RenderPassDepthAttachmentDescriptor* dad = &fb->depth;
+        RenderPassAttachmentDescriptor rad = {};
+
+        rad.texture = texture.texture;
+        rad.level = mipmap_level;
+        rad.loadAction = l;
+        rad.storeAction = st;
+        rad.storeActionOptions = StoreActionOptionNone;
+        dad->clear_depth = 1.0f;
+        dad->resolve_filter =     MultisampleDepthResolveFilterSample0;
+        dad->description = rad;
+    }
+    else
+    {
+//Your framebuffer is invalid or does not exist.
+        Assert(false);
+    }    
+}
+
+void ogle_fb_tex2d_stencil(OpenGLEmuState* s,u64 id,GLTexture texture,u32 mipmap_level,LoadAction l,StoreAction st)
+{
+    if(AnythingCacheCode::DoesThingExist(&s->gl_framebuffer_cache,(void*)&id))
+    {
+        GLFrameBufferInternal* fb = GetThingPtr(&s->gl_framebuffer_cache,(void*)&id,GLFrameBufferInternal);
+        RenderPassStencilAttachmentDescriptor* sad = &fb->stencil;
+        RenderPassAttachmentDescriptor rad = {};
+        rad.texture = texture.texture;
+        rad.level = mipmap_level;
+        rad.loadAction = l;
+        rad.storeAction = st;
+        rad.storeActionOptions = StoreActionOptionNone;
+        sad->clearStencil = 1.0f;
+        sad->stencilResolveFilter = 0.0f;
+        sad->description = rad;
+    }
+    else
+    {
+//Your framebuffer is invalid or does not exist.
+        Assert(false);
+    }        
+}
+
+void ogle_bind_framebuffer(OpenGLEmuState* s,u64 id)
+{
+    ogle_add_header(s,glemu_bufferstate_framebuffer_bind);
+    GLEMUBindFrameBufferCommand* command = OGLE_ADD_COMMAND(s,GLEMUBindFrameBufferCommand);
+    command->id = id;    
+}
+
 void ogl_bind_framebuffer_start(OpenGLEmuState*s,GLTexture texture)
 {
     Texture texture_for_framebuffer = texture.texture;
@@ -1779,6 +1943,13 @@ void ogle_stencil_Func_and_op_sep(OpenGLEmuState*s,uint32_t front_or_back,Compar
     s->current_reference_value = ref;
 }
     
+void ogle_clear_color_target(OpenGLEmuState*s,uint32_t index)
+{
+    ogle_add_header(s,glemu_bufferstate_clear_color_target);
+    GLEMUClearColorBufferCommand* command = OGLE_ADD_COMMAND(s,GLEMUClearColorBufferCommand);
+    command->index = true;
+}
+    
 void ogle_clear_buffer(OpenGLEmuState*s,uint32_t buffer_bits)
 {
     ogle_add_header(s,glemu_bufferstate_clear_start);
@@ -1789,6 +1960,13 @@ void ogle_clear_buffer(OpenGLEmuState*s,uint32_t buffer_bits)
     ogle_add_header(s,glemu_bufferstate_clear_end);
     GLEMUClearBufferCommand* end_command = OGLE_ADD_COMMAND(s,GLEMUClearBufferCommand);        
     end_command->is_start = false;
+}
+
+void ogle_clear_depth(OpenGLEmuState*s,uint32_t value)
+{
+    ogle_add_header(s,glemu_bufferstate_clear_depth_value);
+    GLEMUClearDepthCommand* command = OGLE_ADD_COMMAND(s,GLEMUClearDepthCommand);        
+    command->value = value;
 }
 
 void ogle_clear_stencil(OpenGLEmuState*s,uint32_t value)
@@ -1960,6 +2138,9 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
         
     uint32_t render_encoder_count = 0;
     float4 current_clear_color = float4(0.0f);
+    float current_clear_depth_value = 1.0f;
+    float current_clear_stencil_value = 0.0f;
+    
     if(current_drawable.state)
     {
         //Set default in_params for passes
@@ -2009,51 +2190,100 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 
             if(!init_params)
             {
-                RenderEncoderCode::SetRenderPassColorAttachmentTexture(&render_texture,&current_pass_desc,0);
-                RenderEncoderCode::SetRenderPassColorAttachmentDescriptor(&current_pass_desc,0);
-                RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+
+                RenderPassColorAttachmentDescriptor cad = {};
+                cad.description.texture = render_texture;
+                
+                RenderEncoderCode::SetRenderPassColorAttachmentIndex(&current_pass_desc,&cad,0);                
                 current_render_texture = render_texture;                            
                 render_encoder_count++;
 
                 RenderCommandEncoder re = RenderEncoderCode::RenderCommandEncoderWithDescriptor(c_buffer,&current_pass_desc);
+                
                 RenderEncoderCode::SetFrontFaceWinding(&re,winding_order_counter_clockwise);
                 in_params.re = re;
                 last_set_pass_desc = current_pass_desc;
 #if METALIZER_DEBUG_OUTPUT
                 PlatformOutput(s->debug_out_general,"Setting last set_pass_desc\n");
 #endif
+
+                bool is_new_pipeline = false;
+                RenderPipelineStateDesc pd = in_params.pipeline_state.desc;                
+                //check consistency of pixel formats between render pass and pipeline state
+                for(int i = 0;i < 4;++i)
+                {
+                    RenderPipelineColorAttachmentDescriptor desc = pd.color_attachments.i[i];
+                    RenderPassColorAttachmentDescriptor* cd = (RenderPassColorAttachmentDescriptor*)GetBufEle(&current_pass_desc.colorAttachments,i);
+
+                    if(cd && desc.pixelFormat != cd->description.texture.descriptor.pixelFormat)
+                    {
+                        desc.pixelFormat = cd->description.texture.descriptor.pixelFormat;
+                        
+                        //if its and someone tried to use it should just set it as a non texture
+                        //and sync everything  just dont let client use invalid textures as color attachments
+                        //put out a warning or silently fail?
+                        if(cd->description.texture.state == nullptr)
+                        {
+                            desc.pixelFormat = PixelFormatInvalid;
+                        }
+                        
+#if METALIZER_DEBUG_OUTPUT
+                        PlatformOutput(s->debug_out_general,"NewPIpelineState::Due to non matching pipleline state and render pass pixel format.\n");
+#endif
+
+                        pd.color_attachments.i[i] = desc;       
+
+                        is_new_pipeline = true;
+
+                    }
+                }
+                
                 //Verify and set pipeline states attachments to the same as our current renderpass
                 //Do depth and stencil only for now bu tlater we want to ensure that our color attachments match as well.
                 if(in_params.pipeline_state.desc.depthAttachmentPixelFormat != current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat)
                 {
-                    RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
                     pd.depthAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
                     pd.stencilAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
-                        
-                    //if its and someone tried to use it should just set it as a non texture
-                    //and sync everything  just dont let client use invalid textures as color attachments
-                    //put out a warning or silently fail?
-                    if(current_pass_desc.depth_attachment.description.texture.state == nullptr)
-                    {
-                        pd.depthAttachmentPixelFormat = PixelFormatInvalid;
-                        pd.stencilAttachmentPixelFormat = PixelFormatInvalid;
-                    }
                         
 #if METALIZER_DEBUG_OUTPUT
                     PlatformOutput(s->debug_out_general,"NewPIpelineState::pd\n");
 #endif
+                    is_new_pipeline = true;
+                }
                         
+                //if its and someone tried to use it should just set it as a non texture
+                //and sync everything  just dont let client use invalid textures as color attachments
+                //put out a warning or silently fail?
+                if(current_pass_desc.depth_attachment.description.texture.state == nullptr)
+                {
+                    pd.depthAttachmentPixelFormat = PixelFormatInvalid;
+                    is_new_pipeline = true;
+                }
+                
+                if(current_pass_desc.stencil_attachment.description.texture.state == nullptr)
+                {
+                    pd.stencilAttachmentPixelFormat = PixelFormatInvalid;
+                    is_new_pipeline = true;
+                }
+
+                //if(is_new_pipeline)
+                {
                     RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
                     Assert(next_pso.desc.fragment_function);
                     Assert(next_pso.desc.sample_count == 1);
                     Assert(next_pso.desc.vertex_function);
                     Assert(next_pso.state);
-                        
+                    
                     RenderEncoderCode::SetRenderPipelineState(&in_params.re,next_pso.state);
                     prev_pso = in_params.pipeline_state;
                     in_params.pipeline_state = next_pso;
                 }
-                    
+                        
+                if(current_depth_desc.depthWriteEnabled)
+                {
+                    Assert((in_params.pipeline_state.desc.depthAttachmentPixelFormat != PixelFormatInvalid));                    
+                }
+
                 //NOTE(Ray):If we are scissor enable we need to clamp the scissor rect to the rendertarget surface
                 if(in_params.is_s_rect)
                 {
@@ -2078,14 +2308,73 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 }
                 init_params = true;
             }
-                
-            if(command_type == glemu_bufferstate_start)
+
+            if(command_type == glemu_bufferstate_framebuffer_bind)
             {
-                GLEMUFramebufferStart* command = OGLE_POP(at,GLEMUFramebufferStart);//(GLEMUFramebufferStart)at;
+                GLEMUBindFrameBufferCommand* command = OGLE_POP(at,GLEMUBindFrameBufferCommand);
+                u64 fb_id = command->id;
+
+                prev_pass_desc = last_set_pass_desc;                                                    
+                RenderPassDescriptor temp_desc = last_set_pass_desc;
+                
+                if(fb_id != 0 && AnythingCacheCode::DoesThingExist(&s->gl_framebuffer_cache,(void*)&fb_id))
+                {
+                    GLFrameBufferInternal* fb = GetThingPtr(&s->gl_framebuffer_cache,(void*)&fb_id,GLFrameBufferInternal);
+                    for(int i = 0;i < 4;++i)
+                    {
+                        RenderPassColorAttachmentDescriptor* cd = (RenderPassColorAttachmentDescriptor*)GetBufEle(&fb->color,i);
+                        if(cd->description.texture.state && i == 0)
+                        {
+                            render_texture = cd->description.texture;
+                            RenderPassColorAttachmentDescriptor* ca = (RenderPassColorAttachmentDescriptor*)GetBufEle(&temp_desc.colorAttachments,i);
+                            if(ca)
+                            {
+                                ca->description.loadAction = cd->description.loadAction;
+                                ca->description.storeAction = cd->description.storeAction;
+                            }
+                        }
+                        else
+                        {
+                            //No texture for this color attachment so not used
+                        }
+                    }
+
+                    //depth                    
+                    Texture no_tex = {};
+                    temp_desc.depth_attachment.description.texture       = fb->depth.description.texture;
+                    temp_desc.depth_attachment.description.loadAction    = fb->depth.description.loadAction;
+                    temp_desc.depth_attachment.description.storeAction   = fb->depth.description.storeAction;
+                    temp_desc.depth_attachment.description.texture.descriptor.pixelFormat   = fb->depth.description.texture.descriptor.pixelFormat;
+
+                    //stencil
+                    temp_desc.stencil_attachment.description.texture       = fb->stencil.description.texture;
+                    temp_desc.stencil_attachment.description.loadAction    = fb->stencil.description.loadAction;
+                    temp_desc.stencil_attachment.description.storeAction   = fb->stencil.description.storeAction;
+                    temp_desc.stencil_attachment.description.texture.descriptor.pixelFormat   = fb->stencil.description.texture.descriptor.pixelFormat;
+
+                    current_pass_desc = temp_desc;                    
+                }
+                else //if we cant find the framebuffer use the default for now
+                {
+                    current_pass_desc = s->default_render_pass_descriptor;
+                    render_texture = current_drawable.texture;
+#if METALIZER_DEBUG_OUTPUT
+                    PlatformOutput(s->debug_out_general,"Using default framebuffer rendertargete\n");
+#endif
+                }
+
+                RenderEncoderCode::EndEncoding(&in_params.re);
+                init_params = false;                                
+                continue;                
+            }
+            
+            else if(command_type == glemu_bufferstate_start)
+            {
+                Assert(false);
+                GLEMUFramebufferStart* command = OGLE_POP(at,GLEMUFramebufferStart);
                 if(command->texture.state != current_render_texture.state)
                 {
                     render_texture = command->texture;
-
                     prev_pass_desc = last_set_pass_desc;
                         
                     RenderPassDescriptor temp_desc = last_set_pass_desc;
@@ -2098,9 +2387,7 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                     temp_desc.stencil_attachment.description.texture       = no_tex;
                     temp_desc.stencil_attachment.description.loadAction    = LoadActionDontCare;
                     temp_desc.stencil_attachment.description.storeAction   = StoreActionDontCare;
-                        
-                    RendererCode::SetRenderPassDescriptor(&temp_desc);
-                        
+                  
                     current_pass_desc = temp_desc;
 #if METALIZER_DEBUG_OUTPUT
                     PlatformOutput(s->debug_out_general, "GLEMU BUFFERSTATE START\n");
@@ -2138,7 +2425,6 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 //Than after the clear set them back to defaults
                 if(command->write_mask_value & (1 << 1))
                 {
-                        
                     RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
                     ca->description.loadAction = LoadActionClear;
                     ca->clear_color = current_clear_color;
@@ -2148,14 +2434,16 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 //has pixel format. 
                 if(command->write_mask_value & (1 << 2))
                 {
-                    current_pass_desc.depth_attachment.description.loadAction = LoadActionClear;                                
+                    current_pass_desc.depth_attachment.description.loadAction = LoadActionClear;
+                    current_pass_desc.depth_attachment.clear_depth = current_clear_depth_value;
                 }
+
                 if(command->write_mask_value & (1 << 3))
                 {
-                    current_pass_desc.stencil_attachment.description.loadAction = LoadActionClear;                                
+                    current_pass_desc.stencil_attachment.description.loadAction = LoadActionClear;
+                    current_pass_desc.stencil_attachment.clearStencil = current_clear_stencil_value;
                 }
                     
-                RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                 RenderEncoderCode::EndEncoding(&in_params.re);
                 init_params = false;
 
@@ -2164,7 +2452,29 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
 #endif
                 continue;
             }
-                
+            else if(command_type == glemu_bufferstate_clear_color_target)
+            {
+                GLEMUClearColorBufferCommand* command = OGLE_POP(at,GLEMUClearColorBufferCommand);
+                u32 index = command->index;
+                //Get buffer bits and than set the attachments to the state needed.
+                //Than after the clear set them back to defaults
+//                if(command->write_mask_value & (1 << 1))
+                {
+                    RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,index);
+                    if(ca)
+                    {
+                        ca->description.loadAction = LoadActionClear;
+                        ca->clear_color = current_clear_color;
+                    }
+                    else
+                    {
+#if METALIZER_DEBUG_OUTPUT
+                        PlatformOutput(s->debug_out_general, "GLEMU CLEAR Did not find your rendertarget index no clear set!!\n");
+#endif
+                    }
+                }
+                continue;
+            }
             else if(command_type == glemu_bufferstate_clear_end)
             {
                 GLEMUClearBufferCommand* command = OGLE_POP(at,GLEMUClearBufferCommand);
@@ -2174,7 +2484,6 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 ca->description.loadAction = LoadActionLoad;
                 current_pass_desc.depth_attachment.description.loadAction = LoadActionLoad;                                
                 current_pass_desc.stencil_attachment.description.loadAction = LoadActionLoad;
-                RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                 RenderEncoderCode::EndEncoding(&in_params.re);
                 init_params = false;
 
@@ -2187,10 +2496,20 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
             else if(command_type == glemu_bufferstate_clear_stencil_value)
             {
                 GLEMUClearStencilCommand* command = OGLE_POP(at,GLEMUClearStencilCommand);
-                Assert(false);
+#if METALIZER_DEBUG_OUTPUT
+                PlatformOutput(s->debug_out_general, "GLEMU CLEAR stencil \n");
+#endif
+                current_clear_stencil_value = command->write_mask_value;
+                continue;
+            }
+                
+            else if(command_type == glemu_bufferstate_clear_depth_value)
+            {
+                GLEMUClearDepthCommand* command = OGLE_POP(at,GLEMUClearDepthCommand);
 #if METALIZER_DEBUG_OUTPUT
                 PlatformOutput(s->debug_out_general, "GLEMU CLEAR stencil' not implemented' \n");
 #endif
+                current_clear_depth_value = command->value;
                 continue;
             }
                 
@@ -2230,7 +2549,39 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 RenderEncoderCode::SetViewport(&in_params.re,vp.x(),vp.y(),vp.z(),vp.w(),0.0f,1.0f);                            
                 continue;
             }
-                
+
+            else if(command_type == glemu_bufferstate_blend_change_i)
+            {
+                GLEMUBlendICommand* command = OGLE_POP(at,GLEMUBlendICommand);
+                BlendFactor source = command->sourceRGBBlendFactor;
+                BlendFactor dest = command->destinationRGBBlendFactor;
+                    
+                RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
+                RenderPipelineColorAttachmentDescriptor cad = in_params.pipeline_state.desc.color_attachments.i[command->index];
+                //                            if(cad.sourceRGBBlendFactor != source || cad.destinationRGBBlendFactor != dest)
+                Assert((int)source >= 0);
+                Assert((int)dest >= 0);
+                        
+                cad.sourceRGBBlendFactor = source;
+                cad.sourceAlphaBlendFactor = source;
+                cad.destinationRGBBlendFactor = dest;
+                cad.destinationAlphaBlendFactor = dest;
+                pd.color_attachments.i[command->index] = cad;
+                        
+                RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
+                Assert(next_pso.desc.fragment_function);
+                Assert(next_pso.desc.sample_count == 1);
+                Assert(next_pso.desc.vertex_function);
+                Assert(next_pso.state);
+#if METALIZER_DEBUG_OUTPUT
+                PlatformOutput(s->debug_out_general,"Framebuffer_blend_change::New Pipeline State\n");
+#endif
+                in_params.pipeline_state = next_pso;
+
+                RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
+                continue;
+            }
+            
             else if(command_type == glemu_bufferstate_blend_change)
             {
                 GLEMUBlendCommand* command = OGLE_POP(at,GLEMUBlendCommand);
@@ -2238,30 +2589,34 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 BlendFactor dest = command->destinationRGBBlendFactor;
                     
                 RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
-                RenderPipelineColorAttachmentDescriptor cad = in_params.pipeline_state.desc.color_attachments.i[0];
-                //                            if(cad.sourceRGBBlendFactor != source || cad.destinationRGBBlendFactor != dest)
+                //NOTE(RAY):In GL if not specified with glblendfuncI(buf,sfac,dfac) than all targets get the alpha applied.
+                //If this is slow for you than use ogl_blend_change_i function.
+                for(int i = 0;i < 4;++i)
                 {
+                    RenderPipelineColorAttachmentDescriptor cad = in_params.pipeline_state.desc.color_attachments.i[i];
+                    //                            if(cad.sourceRGBBlendFactor != source || cad.destinationRGBBlendFactor != dest)
+                    {
+                        Assert((int)source >= 0);
+                        Assert((int)dest >= 0);
                         
-                    Assert((int)source >= 0);
-                    Assert((int)dest >= 0);
+                        cad.sourceRGBBlendFactor = source;
+                        cad.sourceAlphaBlendFactor = source;
+                        cad.destinationRGBBlendFactor = dest;
+                        cad.destinationAlphaBlendFactor = dest;
+                        pd.color_attachments.i[i] = cad;
                         
-                    cad.sourceRGBBlendFactor = source;
-                    cad.sourceAlphaBlendFactor = source;
-                    cad.destinationRGBBlendFactor = dest;
-                    cad.destinationAlphaBlendFactor = dest;
-                    pd.color_attachments.i[0] = cad;
-                        
-                    RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
-                    Assert(next_pso.desc.fragment_function);
-                    Assert(next_pso.desc.sample_count == 1);
-                    Assert(next_pso.desc.vertex_function);
-                    Assert(next_pso.state);
+                        RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
+                        Assert(next_pso.desc.fragment_function);
+                        Assert(next_pso.desc.sample_count == 1);
+                        Assert(next_pso.desc.vertex_function);
+                        Assert(next_pso.state);
 #if METALIZER_DEBUG_OUTPUT
-                    PlatformOutput(s->debug_out_general,"Framebuffer_blend_change::New Pipeline State\n");
+                        PlatformOutput(s->debug_out_general,"Framebuffer_blend_change::New Pipeline State\n");
 #endif
-                    in_params.pipeline_state = next_pso;
-                    RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
+                        in_params.pipeline_state = next_pso;
+                    }                    
                 }
+                RenderEncoderCode::SetRenderPipelineState(&in_params.re,in_params.pipeline_state.state);
                 continue;
             }
                 
@@ -2381,7 +2736,7 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 {
                     //NOTE(Ray):Since we need a valid texture set for the renderpass end encoding and
                     //start a new encoder with a valid texture set on the render pass descriptor.
-                    RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+//                    RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                     RenderEncoderCode::EndEncoding(&in_params.re);
 #if METALIZER_DEBUG_OUTPUT
                     PlatformOutput(s->debug_out_general,"End Encoding Setting renderpassdesc to have texture \n");
@@ -2391,7 +2746,40 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                 s->is_depth_enabled = true;
                 continue;
             }
-                
+            if(command_type == glemu_bufferstate_depth_disable)
+            {
+                GLEMUDepthStateCommand* command = OGLE_POP(at,GLEMUDepthStateCommand);
+                                    
+                #ifdef METALIZER_INSERT_DEBUGSIGNPOST
+                                char* string = "Depth Disabled:";
+                                RenderDebug::InsertDebugSignPost(in_params.re,string);
+                #endif
+                #if METALIZER_DEBUG_OUTPUT
+                                PlatformOutput(s->debug_out_general,"Framebuffer_depth_disable\n");
+                #endif
+                                //NOTE("Must havea  depth buffer attached here");
+                                //The depth should? be the same size as the render target.
+                                //if not fragments out of the bounds of the stencil surface will get clipped.
+                                //Ensure we have a valid sized stencil buffer for the current render texture?
+                                //or leave it to the use responsibility and issue a warning.
+                                current_depth_desc.depthWriteEnabled = false;
+                                DepthStencilState state = ogle_get_depth_sten_state(s,current_depth_desc);
+                                RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+                                //TODO(Ray):ASSERT AFTER EVERY SET DEPTHSTENCILSTATE TO ENSURE WE GOT A VALID STATE BACK!!!
+                                if(!last_set_pass_desc.depth_attachment.description.texture.state)
+                                {
+                                    //NOTE(Ray):Since we need a valid texture set for the renderpass end encoding and
+                                    //start a new encoder with a valid texture set on the render pass descriptor.
+                //                    RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+                                    RenderEncoderCode::EndEncoding(&in_params.re);
+                #if METALIZER_DEBUG_OUTPUT
+                                    PlatformOutput(s->debug_out_general,"End Encoding Setting renderpassdesc to have texture \n");
+                #endif
+                                    init_params = false;
+                                }
+                                s->is_depth_enabled = false;
+                                continue;
+            }
             else if(command_type == glemu_bufferstate_stencil_enable)
             {
                 GLEMUStencilStateCommand* command = OGLE_POP(at,GLEMUStencilStateCommand);
@@ -2419,7 +2807,7 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
                     //Assert(prev_pass_desc.stencil_attachment.description.texture.state);
                     //NOTE(Ray):Since we need a valid texture set for the renderpass end encoding and
                     //start a new encoder with a valid texture set on the render pass descriptor.
-                    RendererCode::SetRenderPassDescriptor(&current_pass_desc);
+//                    RendererCode::SetRenderPassDescriptor(&current_pass_desc);
                     RenderEncoderCode::EndEncoding(&in_params.re);
 #if METALIZER_DEBUG_OUTPUT
                     PlatformOutput(s->debug_out_general,"End Encoding Setting renderpassdesc to have texture \n");
@@ -2749,7 +3137,6 @@ void ogle_execute(OpenGLEmuState*s,void* pass_in_c_buffer,bool enqueue_cb = fals
             }
             else
             {
-                int a = 0;
                 Assert(false);
             }
         }
