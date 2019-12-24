@@ -832,9 +832,12 @@ namespace OpenGLEmu
             //to Replace REgions for packed and compressed formats and proper bytes sizes to multiply width and
             //for 1d arrays should pass in 0
             int byte_size_of_format = 4;
+
+#if IOS && !(OSX ||  __x86_64__ || __i386__)
             if(format == PixelFormatABGR4Unorm)
                 byte_size_of_format = 2;
-                
+#endif
+            
             RenderGPUMemory::ReplaceRegion(texture.texture,region,0,texels,byte_size_of_format * dim.x());
         }
         
