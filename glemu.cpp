@@ -358,6 +358,10 @@ namespace OpenGLEmu
         {
             result = true;
         }
+        else
+        {
+            result = false;
+        }
         EndTicketMutex(&texture_mutex);        
         return result;        
     }
@@ -1394,11 +1398,13 @@ namespace OpenGLEmu
             c_buffer = RenderEncoderCode::CommandBuffer();
         }
         
-        //define start values for the gl render state    
-        ScissorRect default_s_rect = {0,0,(int)RendererCode::dim.x(),(int)RendererCode::dim.y()};
+        //define start values for the gl render state
+        float2 scaled_dim = RendererCode::dim;// * RendererCode::display_scale_factor;
+        ScissorRect default_s_rect = {0,0,(int)scaled_dim.x(),(int)scaled_dim.y()};
+
         ScissorRect s_rect_value = default_s_rect;
         Drawable current_drawable = RenderEncoderCode::GetDefaultDrawableFromView();
-        
+
         DepthStencilDescription current_depth_desc = OpenGLEmu::GetDefaultDepthStencilDescriptor();
         GLProgram current_program = {};
         GLProgram default_program = {};
@@ -1417,6 +1423,7 @@ namespace OpenGLEmu
             in_params.pipeline_state = default_pipeline_state;
             
             RenderPipelineState prev_pso = {};
+            ScissorRect prev_s_rect = {};
             RenderPassDescriptor current_pass_desc = default_render_pass_descriptor;
             RenderPassDescriptor prev_pass_desc = {};
             RenderPassDescriptor last_set_pass_desc = {};
@@ -1424,22 +1431,23 @@ namespace OpenGLEmu
             Texture current_render_texture = render_texture;
             
             bool init_params = false;
-            bool was_a_clear_encoder = false;
+            bool depth_state_change = false;
             
             u32 current_command_index = 0;
             void* at = command_list.buffer.base;
-            
+
 #if METALIZER_DEBUG_OUTPUT
             PlatformOutput(debug_out_general, "GLEMU EXECTING COMMANDS COUNT: %d -- \n",command_list.count);
 #endif
-            
+
             while (current_command_index < command_list.count)
             {
                 GLEMUCommandHeader* header = (GLEMUCommandHeader*)at;
                 at = (uint8_t*)at + sizeof(GLEMUCommandHeader);
                 GLEMUBufferState command_type = header->type;
                 ++current_command_index;
-                
+
+
                 if(command_type == glemu_bufferstate_debug_signpost)
                 {
                     GLEMUAddDebugSignPostCommand* command = Pop(at,GLEMUAddDebugSignPostCommand);                            
@@ -1473,6 +1481,7 @@ namespace OpenGLEmu
                     //Do depth and stencil only for now bu tlater we want to ensure that our color attachments match as well.
                     if(in_params.pipeline_state.desc.depthAttachmentPixelFormat != current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat)
                     {
+                        depth_state_change = false;
                         RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
                         pd.depthAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
                         pd.stencilAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
@@ -1524,6 +1533,38 @@ namespace OpenGLEmu
                         RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
                     }
                     init_params = true;
+                }
+               
+                if(depth_state_change == true)
+                {
+                    depth_state_change = false;
+                    RenderPipelineStateDesc pd = in_params.pipeline_state.desc;
+                    pd.depthAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
+                    pd.stencilAttachmentPixelFormat = current_pass_desc.depth_attachment.description.texture.descriptor.pixelFormat;
+                    
+                    //if its and someone tried to use it should just set it as a non texture
+                    //and sync everything  just dont let client use invalid textures as color attachments
+                    //put out a warning or silently fail?
+                    if(current_pass_desc.depth_attachment.description.texture.state == nullptr)
+                    {
+                        pd.depthAttachmentPixelFormat = PixelFormatInvalid;
+                        pd.stencilAttachmentPixelFormat = PixelFormatInvalid;
+                    }
+                    
+#if METALIZER_DEBUG_OUTPUT
+                    PlatformOutput(debug_out_general,"NewPIpelineState::pd\n");
+#endif
+                    
+                    RenderPipelineState next_pso = RenderEncoderCode::NewRenderPipelineStateWithDescriptor(pd);
+                    Assert(next_pso.desc.fragment_function);
+                    Assert(next_pso.desc.sample_count == 1);
+                    Assert(next_pso.desc.vertex_function);
+                    Assert(next_pso.state);
+                    
+                    RenderEncoderCode::SetRenderPipelineState(&in_params.re,next_pso.state);
+                    prev_pso = in_params.pipeline_state;
+                    in_params.pipeline_state = next_pso;
+                    
                 }
                 
                 if(command_type == glemu_bufferstate_start)
@@ -1585,7 +1626,6 @@ namespace OpenGLEmu
                     //Than after the clear set them back to defaults
                     if(command->write_mask_value & (1 << 1))
                     {
-                        
                         RenderPassColorAttachmentDescriptor* ca = RenderEncoderCode::GetRenderPassColorAttachment(&current_pass_desc,0);
                         ca->description.loadAction = LoadActionClear;
                         ca->clear_color = current_clear_color;
@@ -1761,8 +1801,11 @@ namespace OpenGLEmu
                     GLEMUScissorTestCommand* command = Pop(at,GLEMUScissorTestCommand);
                     in_params.is_s_rect = false;
                     ScissorRect new_s_rect = {};
+                    
+//                    new_s_rect.width = prev_s_rect.width;//current_render_texture.descriptor.width;
+//                    new_s_rect.height = prev_s_rect.height;//current_render_texture.descriptor.height;
                     new_s_rect.width = current_render_texture.descriptor.width;
-                    new_s_rect.height = current_render_texture.descriptor.height;
+                    new_s_rect.height = current_render_texture.descriptor.height;                    
                     new_s_rect.x = 0;
                     new_s_rect.y = 0;
 
@@ -1777,6 +1820,7 @@ namespace OpenGLEmu
                 {
                     GLEMUScissorRectCommand* command = Pop(at,GLEMUScissorRectCommand);
                     ScissorRect temp_rect_value = command->s_rect;
+                    prev_s_rect = in_params.s_rect;
                     //NOTE(Ray):GL is from bottom left we are top left converting y cooridinates to match
                     temp_rect_value.y = current_render_texture.descriptor.height - (temp_rect_value.height + temp_rect_value.y);
                     //NOTE(Ray):Not allowed to specify a value outside of the current renderpass width in metal.
@@ -1855,6 +1899,7 @@ namespace OpenGLEmu
                     RenderDebug::InsertDebugSignPost(in_params.re,string);
 #endif
                     is_stencil_enabled = false;
+                    depth_state_change = true;                    
                     continue;
                 }
                 
@@ -1868,6 +1913,8 @@ namespace OpenGLEmu
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_stencil mask\n");
 #endif
+
+                        depth_state_change = true;
                     continue;                            
                 }
                 
@@ -1885,6 +1932,7 @@ namespace OpenGLEmu
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
 
+                    depth_state_change = true;
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_stencil mask sep\n");
 #endif
@@ -1901,9 +1949,13 @@ namespace OpenGLEmu
                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+
+                    depth_state_change = true;                        
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_stencil func\n");
 #endif
+
+
                     continue;
                 }
                 
@@ -1923,6 +1975,8 @@ namespace OpenGLEmu
                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+
+                    depth_state_change = true;                                            
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_stencil func sep\n");
 #endif
@@ -1948,6 +2002,7 @@ namespace OpenGLEmu
                         RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);                        
                     }
 
+                    depth_state_change = true;                        
                     continue;
                 }
                 
@@ -1968,6 +2023,8 @@ namespace OpenGLEmu
                     }
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+
+                    depth_state_change = true;                        
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_stencil op sep\n");
 #endif
@@ -1993,6 +2050,7 @@ namespace OpenGLEmu
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
 
+                    depth_state_change = true;                        
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_stencil func and op\n");
 #endif
@@ -2021,6 +2079,8 @@ namespace OpenGLEmu
                     RenderEncoderCode::SetStencilReferenceValue(in_params.re,command->mask_value);
                     DepthStencilState state = OpenGLEmu::GetOrCreateDepthStencilState(current_depth_desc);
                     RenderEncoderCode::SetDepthStencilState(&in_params.re,&state);
+
+                    depth_state_change = true;                        
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_stencil func and op sep\n");
 #endif
