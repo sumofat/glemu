@@ -142,7 +142,7 @@ struct GLTextureKey
     uint32_t height;
     uint32_t sample_count;
     StorageMode storage_mode;
-    bool allowGPUOptimizedContents;
+   // bool allowGPUOptimizedContents;
     uint64_t gl_tex_id;
 };
 
@@ -323,7 +323,7 @@ struct GLEMUDrawArraysCommand
 	float2 buffer_range;
 	float2 texture_buffer_range;
 	uint32_t current_count;
-    PrimitiveTopologyClass topology;
+    PrimitiveType primitive_type;
 };
 
 namespace OpenGLEmu
@@ -377,7 +377,7 @@ namespace OpenGLEmu
     void Viewport(float4 vp);
     void BindFrameBufferStart(GLTexture texture);
     void BindFrameBufferEnd();
-    void DrawArrays(uint32_t current_count,uint32_t unit_size);
+    void DrawArrays(uint32_t current_count,uint32_t unit_size,PrimitiveType primitive_type = primitive_type_triangle);
     void DrawArrayPrimitives(uint32_t current_count,uint32_t unit_size);
     GLTexture TexImage2D(void* texels,float2 dim,PixelFormat format,SamplerDescriptor sd,TextureUsage usage);
     GLTexture TexImage2D(void* texels,float2 dim,PixelFormat format,TextureUsage usage);

@@ -298,7 +298,7 @@ namespace OpenGLEmu
         ttk.height = texture->texture.descriptor.height;
         ttk.sample_count = texture->texture.descriptor.sampleCount;
         ttk.storage_mode = texture->texture.descriptor.storageMode;
-        ttk.allowGPUOptimizedContents = texture->texture.descriptor.allowGPUOptimizedContents;
+        //ttk.allowGPUOptimizedContents = texture->texture.descriptor.allowGPUOptimizedContents;
         ttk.gl_tex_id = texture->id;
         
         //If we are not in the texturecache cant delete it since its not a texture we know about.
@@ -347,7 +347,7 @@ namespace OpenGLEmu
         ttk.height = texture.texture.descriptor.height;
         ttk.sample_count = texture.texture.descriptor.sampleCount;
         ttk.storage_mode = texture.texture.descriptor.storageMode;
-        ttk.allowGPUOptimizedContents = texture.texture.descriptor.allowGPUOptimizedContents;
+        //ttk.allowGPUOptimizedContents = texture.texture.descriptor.allowGPUOptimizedContents;
         ttk.gl_tex_id = texture.id;
         
         if(!AnythingCacheCode::DoesThingExist(&gl_texturecache,&ttk))
@@ -850,7 +850,7 @@ namespace OpenGLEmu
         k.height = texture.texture.descriptor.height;
         k.sample_count = texture.texture.descriptor.sampleCount;
         k.storage_mode = texture.texture.descriptor.storageMode;
-        k.allowGPUOptimizedContents = texture.texture.descriptor.allowGPUOptimizedContents;
+        //k.allowGPUOptimizedContents = texture.texture.descriptor.allowGPUOptimizedContents;
         k.gl_tex_id = texture.id;
         
         texture.texture.is_released = false;
@@ -1310,14 +1310,14 @@ namespace OpenGLEmu
     //other info like texture bindings etc... for now at the time of writing this comment we only need to
     //keep uniforms and maybe texture bindings to complete the current project.
     //TODO(Ray):These will clean up nice once we get uniform variable support
-    void DrawArrays(uint32_t current_count,uint32_t unit_size)
+    void DrawArrays(uint32_t current_count,uint32_t unit_size,PrimitiveType primitive_type)
     {
         Assert(current_count != 0);
         AddHeader(glemu_bufferstate_draw_arrays);
         GLEMUDrawArraysCommand* command = AddCommand(GLEMUDrawArraysCommand);                
         command->is_from_to = true;
         command->is_primitive_triangles = false;
-        command->topology = topology_triangle;
+        command->primitive_type = primitive_type;
         
         GLProgramKey key = {(uint64_t)current_program.shader.vs_object,(uint64_t)current_program.shader.ps_object};            
         GLProgram* p = OpenGLEmu::GetProgramPtr(key);
@@ -1350,7 +1350,7 @@ namespace OpenGLEmu
         GLEMUDrawArraysCommand* command = AddCommand(GLEMUDrawArraysCommand);                
         command->is_from_to = true;
         command->is_primitive_triangles = true;
-        command->topology = topology_triangle;
+        command->primitive_type = primitive_type_triangle;
         
         GLProgramKey key = {(uint64_t)current_program.shader.vs_object,(uint64_t)current_program.shader.ps_object};
         GLProgram p = OpenGLEmu::GetProgram(key);
@@ -2137,7 +2137,8 @@ namespace OpenGLEmu
                     uint32_t current_count = command->current_count;
                     
                     GPUBuffer vertexbuffer = in_params.vertexbuffer->buffer[bi];
-                    RenderEncoderCode::DrawPrimitives(&re, command->topology, 0, (current_count));
+//                    RenderEncoderCode::DrawPrimitives(&re,command->primitive_type ,0 ,current_count);
+                    RenderEncoderCode::DrawPrimitives(&re,command->primitive_type,0,current_count);                    
                 }
                 else
                 {
