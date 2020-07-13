@@ -1515,7 +1515,8 @@ namespace OpenGLEmu
                     {
                         ScissorRect temp_rect_value = in_params.s_rect;
                         //NOTE(Ray):GL is from bottom left we are top left converting y cooridinates to match
-                        temp_rect_value.y = default_s_rect.y - temp_rect_value.y;
+                        temp_rect_value.y = current_render_texture.descriptor.height - (temp_rect_value.height + temp_rect_value.y);
+//                        temp_rect_value.y = default_s_rect.height - temp_rect_value.y;
                         //NOTE(Ray):Not allowed to specify a value outside of the current renderpass width in metal.
                         int diffw = (int)current_render_texture.descriptor.width - (temp_rect_value.x + temp_rect_value.width);
                         int diffh = (int)current_render_texture.descriptor.height - (temp_rect_value.y + temp_rect_value.height);
@@ -1529,8 +1530,8 @@ namespace OpenGLEmu
                         temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width - temp_rect_value.x);
                         temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height - temp_rect_value.y);
                         
-                        in_params.s_rect = temp_rect_value;
-                        RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
+                        //in_params.s_rect = temp_rect_value;
+                        RenderEncoderCode::SetScissorRect(&in_params.re, temp_rect_value);
                     }
                     init_params = true;
                 }
@@ -1840,10 +1841,10 @@ namespace OpenGLEmu
                     PlatformOutput(debug_out_general,"Scissor Rect Change\n");
 #endif
                     s_rect_value = temp_rect_value;
-                    in_params.s_rect = temp_rect_value;
+                    in_params.s_rect = command->s_rect;
                     if(in_params.is_s_rect)
                     {
-                        RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);                            
+                        RenderEncoderCode::SetScissorRect(&in_params.re, temp_rect_value);
                     }
                     continue;
                 }
