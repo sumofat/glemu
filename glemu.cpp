@@ -1529,7 +1529,9 @@ namespace OpenGLEmu
                         temp_rect_value.y = clamp(temp_rect_value.y,0,current_render_texture.descriptor.height);
                         temp_rect_value.width = clamp(temp_rect_value.width,0,current_render_texture.descriptor.width - temp_rect_value.x);
                         temp_rect_value.height = clamp(temp_rect_value.height,0,current_render_texture.descriptor.height - temp_rect_value.y);
-                        
+#ifdef METALIZER_INSERT_DEBUGSIGNPOST
+                        RenderDebug::InsertDebugSignPost(in_params.re,"ScissorChange for New Encoder");
+#endif                        
                         //in_params.s_rect = temp_rect_value;
                         RenderEncoderCode::SetScissorRect(&in_params.re, temp_rect_value);
                     }
@@ -1793,6 +1795,9 @@ namespace OpenGLEmu
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_scissor test enable\n");
 #endif
+#ifdef METALIZER_INSERT_DEBUGSIGNPOST
+                        RenderDebug::InsertDebugSignPost(in_params.re,"Scissor Enable");
+#endif                                                
                     RenderEncoderCode::SetScissorRect(&in_params.re, in_params.s_rect);
                     continue;
                 }
@@ -1813,6 +1818,9 @@ namespace OpenGLEmu
 #if METALIZER_DEBUG_OUTPUT                                
                         PlatformOutput(debug_out_general,"Framebuffer_scissor test disable\n");
 #endif
+#ifdef METALIZER_INSERT_DEBUGSIGNPOST
+                        RenderDebug::InsertDebugSignPost(in_params.re,"Scissor Disable");
+#endif                                                                        
                     RenderEncoderCode::SetScissorRect(&in_params.re, new_s_rect);
                     continue;
                 }
@@ -1841,9 +1849,12 @@ namespace OpenGLEmu
                     PlatformOutput(debug_out_general,"Scissor Rect Change\n");
 #endif
                     s_rect_value = temp_rect_value;
-                    in_params.s_rect = command->s_rect;
+                    in_params.s_rect = temp_rect_value;
                     if(in_params.is_s_rect)
                     {
+#ifdef METALIZER_INSERT_DEBUGSIGNPOST
+                        RenderDebug::InsertDebugSignPost(in_params.re,"Scissor Change Execute");
+#endif                                                                                                
                         RenderEncoderCode::SetScissorRect(&in_params.re, temp_rect_value);
                     }
                     continue;
